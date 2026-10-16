@@ -257,7 +257,7 @@
         <div class="tab-pane" id="formatTab">
           <div class="section">
             <div class="section-title">Aspect Ratio</div>
-            <div class="grid-4" id="aspectRatioGrid">
+            <div class="grid-5" id="aspectRatioGrid" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px;">
               <div class="choice-card active" data-ratio="9:16">
                 <div class="choice-card-icon">📱</div>
                 <div class="choice-card-label">9:16</div>
@@ -277,6 +277,39 @@
                 <div class="choice-card-icon">🖥️</div>
                 <div class="choice-card-label">16:9</div>
                 <div style="font-size: 0.65rem; color: var(--text-muted);">Landscape</div>
+              </div>
+              <div class="choice-card" data-ratio="custom">
+                <div class="choice-card-icon">📐</div>
+                <div class="choice-card-label">Custom</div>
+                <div style="font-size: 0.65rem; color: var(--text-muted);">User Defined</div>
+              </div>
+            </div>
+
+            <!-- Custom Aspect Ratio Dimension Controls -->
+            <div id="customAspectRatioBox" style="display: none; margin-top: 10px; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-subtle); border-radius: 10px; padding: 12px;">
+              <div style="font-size: 0.78rem; font-weight: 700; color: #fff; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+                <span>📐 Custom Resolution & Ratio</span>
+                <span id="customRatioCalculatedLabel" style="font-size: 0.7rem; color: var(--accent-volt); font-weight: 600;">1:1 (1080 x 1080)</span>
+              </div>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <div style="flex: 1;">
+                  <label style="font-size: 0.68rem; color: var(--text-muted); display: block; margin-bottom: 3px;">Width (px)</label>
+                  <input type="number" id="customWidthInput" class="form-input" min="300" max="4000" step="10" value="1080" style="font-size: 0.8rem; padding: 6px 8px;">
+                </div>
+                <button type="button" id="swapDimensionsBtn" class="btn btn-secondary" style="padding: 6px 10px; margin-top: 16px; font-size: 0.8rem;" title="Swap Width and Height">🔄</button>
+                <div style="flex: 1;">
+                  <label style="font-size: 0.68rem; color: var(--text-muted); display: block; margin-bottom: 3px;">Height (px)</label>
+                  <input type="number" id="customHeightInput" class="form-input" min="300" max="4000" step="10" value="1080" style="font-size: 0.8rem; padding: 6px 8px;">
+                </div>
+              </div>
+              <!-- Quick Ratio Presets -->
+              <div style="margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap;">
+                <span style="font-size: 0.68rem; color: var(--text-muted); width: 100%; margin-bottom: 2px;">Quick Resolution Presets:</span>
+                <button type="button" class="btn btn-secondary quick-ratio-btn" data-w="1080" data-h="1440" style="padding: 3px 8px; font-size: 0.7rem;">3:4 (1080×1440)</button>
+                <button type="button" class="btn btn-secondary quick-ratio-btn" data-w="1080" data-h="1620" style="padding: 3px 8px; font-size: 0.7rem;">2:3 (1080×1620)</button>
+                <button type="button" class="btn btn-secondary quick-ratio-btn" data-w="1440" data-h="1080" style="padding: 3px 8px; font-size: 0.7rem;">4:3 (1440×1080)</button>
+                <button type="button" class="btn btn-secondary quick-ratio-btn" data-w="2560" data-h="1080" style="padding: 3px 8px; font-size: 0.7rem;">21:9 Ultra (2560×1080)</button>
+                <button type="button" class="btn btn-secondary quick-ratio-btn" data-w="1080" data-h="2520" style="padding: 3px 8px; font-size: 0.7rem;">9:21 Tall (1080×2520)</button>
               </div>
             </div>
           </div>
@@ -339,6 +372,30 @@
               <div class="choice-card" data-template="lap-workout">
                 <div class="choice-card-label">🏁 Lap Workout</div>
                 <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">Track interval repeats with lap splits spotlight</div>
+              </div>
+              <div class="choice-card" data-template="kinetic-centered">
+                <div class="choice-card-label">⚡ Kinetic Centered</div>
+                <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">Symmetrical center-aligned minimalism with pod triads & crest</div>
+              </div>
+              <div class="choice-card" data-template="marathon-finisher">
+                <div class="choice-card-label">🏅 Marathon Finisher</div>
+                <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">Gold & carbon luxury aesthetic, trophy card & elevation ridge</div>
+              </div>
+              <div class="choice-card" data-template="tokyo-night">
+                <div class="choice-card-label">🏙️ Tokyo Night HUD</div>
+                <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">Cyberpunk neon telemetry, flight instruments & pulse stream</div>
+              </div>
+              <div class="choice-card" data-template="ultra-trail">
+                <div class="choice-card-label">⛰️ Ultra Trail Ridge</div>
+                <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">Mountain elevation profile, split ladder & trail telemetry</div>
+              </div>
+              <div class="choice-card" data-template="swiss-editorial">
+                <div class="choice-card-label">📰 Swiss Athletic</div>
+                <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">High-fashion athletic magazine typography & bold 2-col stats</div>
+              </div>
+              <div class="choice-card" data-template="smartwatch-ultra">
+                <div class="choice-card-label">⌚ Watch Face Modular</div>
+                <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">Smartwatch complication gauges, cardiac halo & radial pods</div>
               </div>
             </div>
           </div>
@@ -677,6 +734,40 @@
             </div>
           </div>
 
+          <!-- MULTI-INSTANCE WIDGETS MANAGER (ADD EXTRA WIDGETS) -->
+          <div class="section" id="extraWidgetsManagerSection">
+            <div class="section-title" style="display: flex; justify-content: space-between; align-items: center;">
+              <span>Multi-Instance Widgets (+ Add Extra)</span>
+              <span class="badge" style="background: var(--accent-volt); color: #000; font-weight: 800; font-size: 0.68rem; padding: 2px 6px; border-radius: 4px;">MULTI-WIDGET</span>
+            </div>
+            <p class="section-desc" style="margin-bottom: 8px;">Add multiple autonomous instances of any widget category (e.g. 2nd Hero Card for Pace, extra Metrics Grid, extra Map, etc.)</p>
+            
+            <div style="display: flex; gap: 8px; margin-bottom: 10px;">
+              <select id="newWidgetCategorySelect" class="form-select" style="flex: 1;">
+                <option value="hero">🏆 Hero Stat (Big Number)</option>
+                <option value="metrics">📊 Secondary Metrics Grid</option>
+                <option value="splits">📶 Splits Table / Bar Chart</option>
+                <option value="splitHighlight">⚡ Split Spotlight Card</option>
+                <option value="map">🗺️ GPS Route Map</option>
+                <option value="elevation">⛰️ Elevation Profile</option>
+                <option value="paceGraph">📈 Pace Graph</option>
+                <option value="hrGraph">💓 Heart Rate Graph</option>
+                <option value="hrBadge">🩺 Avg Heart Rate Badge</option>
+                <option value="hrZones">❤️ Heart Rate Zones Bar</option>
+                <option value="brand">⚡ Social Brand Badge</option>
+                <option value="header">🏷️ Header Widget</option>
+              </select>
+              <button type="button" id="addNewWidgetBtn" class="btn btn-primary" style="white-space: nowrap; font-weight: 700;">
+                ➕ Add Widget
+              </button>
+            </div>
+
+            <!-- Active Extra Widgets List Container -->
+            <div id="extraWidgetsListContainer" style="display: flex; flex-direction: column; gap: 8px;">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+
           <!-- WIDGET DESIGN VARIANTS (EXPANDED TO 6-7 STYLES EACH) -->
           <div class="section">
             <div class="section-title">Widget Design Styles</div>
@@ -686,6 +777,9 @@
               <select id="headerDesignSelect" class="form-select">
                 <option value="modern" selected>Modern Clean (Left title, date, runner)</option>
                 <option value="centered-hero">Centered Hero (Centered title & date badge)</option>
+                <option value="centered-crest">Centered Athletic Crest (Crest & Symmetrical Wings)</option>
+                <option value="centered-minimal-clean">Centered Minimal Clean (Hairline Typographic Divider)</option>
+                <option value="circular-monogram">Circular Runner Monogram (Centered Seal & Stacked Subtext)</option>
                 <option value="stacked-editorial">Stacked Editorial (Headline with date kicker & divider)</option>
                 <option value="split-banner">Split Calendar Banner (Title + calendar day box)</option>
                 <option value="retro-cyber">Retro Cyber HUD (Bracket tech frame & crosses)</option>
@@ -731,6 +825,9 @@
               <label class="form-label">Hero Metric Display Style</label>
               <select id="heroDesignSelect" class="form-select">
                 <option value="mega" selected>Mega Athletic Display</option>
+                <option value="centered-radial-pod">Centered Radial Stadium Pod (Glowing Halo & Unit Badge)</option>
+                <option value="centered-stadium-capsule">Centered Stadium Capsule (Pill Frame & Centered Stack)</option>
+                <option value="centered-monolith">Centered Monolith (Ultra Bold Typography & Neon Underline)</option>
                 <option value="card">Structured Stats Card</option>
                 <option value="boxed-bracket">HUD Corner Brackets (Glowing Anchors)</option>
                 <option value="stacked-duo">Stacked Duo-Tone (Split Bar)</option>
@@ -754,6 +851,9 @@
               <label class="form-label">Secondary Metrics Grid Style</label>
               <select id="metricsDesignSelect" class="form-select">
                 <option value="grid" selected>Glass Cards Grid (Multi-Col)</option>
+                <option value="centered-pod-triad">Centered Pod Triad (3 Symmetrical Rounded Pods)</option>
+                <option value="centered-pill-clusters">Centered Pill Clusters (Symmetrical Horizontal Pills)</option>
+                <option value="centered-cross-quad">Centered Crosshair Quad (Symmetrical 2x2 Grid)</option>
                 <option value="cards-2col">2-Column Bold Stat Cards (Indicator Bar)</option>
                 <option value="vertical-stacked-hud">Vertical Telemetry Rows (Icon + Value)</option>
                 <option value="vertical-minimal-stack">Vertical Minimalist Stack (Clean Hairline Rows)</option>
@@ -782,6 +882,8 @@
               <label class="form-label">Splits Bar Chart Style</label>
               <select id="splitsDesignSelect" class="form-select">
                 <option value="vertical-bars" selected>Vertical Columns (Fastest glowing)</option>
+                <option value="centered-split-ladder">Centered Split Ladder (Vertical Symmetrical Spine)</option>
+                <option value="centered-split-pills">Centered Split Pills (Symmetrical KM Badges)</option>
                 <option value="horizontal-bars">Horizontal Progress Bars</option>
                 <option value="pace-table">Split Table with Customizable Data</option>
                 <option value="pace-delta-bars">Pace Delta Equalizer (+/- Center Axis)</option>
@@ -798,6 +900,7 @@
               <label class="form-label">Split Highlight Card Style</label>
               <select id="splitHighlightDesignSelect" class="form-select">
                 <option value="spotlight" selected>Spotlight Card (Big pace & stats)</option>
+                <option value="centered-trophy-card">Centered Trophy Card (Golden Halo & Fast Split Badge)</option>
                 <option value="bib">Race Bib Badge (Interval bib style)</option>
                 <option value="medal-podium">Gold Medal Trophy Podium</option>
                 <option value="polaroid-clip">Paper Note with Paperclip</option>
@@ -810,6 +913,7 @@
               <label class="form-label">Elevation Profile Style</label>
               <select id="elevationDesignSelect" class="form-select">
                 <option value="area" selected>Smooth Gradient Area</option>
+                <option value="centered-mountain-peak">Centered Mountain Peak (Symmetrical Peak & Gain Banner)</option>
                 <option value="topo-contours">Topographic Contour Fill</option>
                 <option value="gradient-altitude">High-Contrast Altitude Gradient</option>
                 <option value="line">Minimalist Line Graph</option>
@@ -824,6 +928,7 @@
               <label class="form-label">Pace Graph Style</label>
               <select id="paceGraphDesignSelect" class="form-select">
                 <option value="area" selected>Smooth Translucent Area</option>
+                <option value="centered-speed-pulse">Centered Speed Pulse (Oscilloscope Telemetry Wave)</option>
                 <option value="bar-histogram">Pace Bar Histogram</option>
                 <option value="cyber-hud-pace">Cyberpunk HUD with Target Pace Line</option>
                 <option value="line">Crisp High-Precision Line</option>
@@ -836,6 +941,7 @@
               <label class="form-label">Heart Rate Graph Style</label>
               <select id="hrGraphDesignSelect" class="form-select">
                 <option value="filled-area" selected>Red Gradient Area</option>
+                <option value="centered-cardiac-halo">Centered Cardiac Halo (Glowing ECG Waveform)</option>
                 <option value="zone-gradient-strip">Z1-Z5 Multi-Zone Continuous Gradient</option>
                 <option value="cardiac-monitor">Cardiac Monitor Oscilloscope CRT</option>
                 <option value="ecg-wave">Colored ECG Wave (Zones)</option>
@@ -848,6 +954,7 @@
               <label class="form-label">Average Heart Rate Badge Style</label>
               <select id="hrBadgeDesignSelect" class="form-select">
                 <option value="pill" selected>Pulsing Heart Pill</option>
+                <option value="centered-heart-crest">Centered Heart Crest (Glowing Heart & Centered BPM)</option>
                 <option value="zone-badge">Intensity Zone Blocks Badge</option>
                 <option value="lcd-pulse">Cardiac Monitor Oscilloscope LCD</option>
                 <option value="card">Heart Stats Card</option>
@@ -915,6 +1022,7 @@
             <div class="section-title">
               <span>🎨 Individual Element Styler</span>
               <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                <button type="button" id="inspectorReintroduceBtn" class="btn btn-secondary" style="padding: 2px 8px; font-size: 0.72rem; color: #10b981; border-color: rgba(16, 185, 129, 0.4); display: none;" title="Reintroduce all deleted elements of this widget">➕ Reintroduce Elements</button>
                 <button type="button" id="inspectorRestoreTemplateBtn" class="btn btn-secondary" style="padding: 2px 8px; font-size: 0.72rem; color: #38bdf8;" title="Restore this widget to its original template design">↺ Restore Template</button>
                 <button type="button" id="inspectorDeleteElementBtn" class="btn btn-secondary" style="padding: 2px 8px; font-size: 0.72rem; color: #f87171;" title="Delete or hide selected widget">🗑 Delete Widget</button>
                 <button type="button" id="inspectorResetBtn" class="btn btn-secondary" style="padding: 2px 8px; font-size: 0.72rem;" title="Reset style overrides for this element">Reset Style</button>
@@ -926,7 +1034,13 @@
 
             <!-- Target Element Selector -->
             <div class="form-group">
-              <label class="form-label">Element to Style:</label>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <label class="form-label" style="margin-bottom: 0;">Element to Style:</label>
+                <div style="display: flex; gap: 4px;">
+                  <button type="button" id="inspectorDuplicateWidgetBtn" class="btn btn-secondary" style="padding: 2px 6px; font-size: 0.7rem; color: var(--accent-volt);" title="Duplicate this widget as an additional instance">📋 Duplicate</button>
+                  <button type="button" id="inspectorDeleteInstanceBtn" class="btn btn-secondary" style="padding: 2px 6px; font-size: 0.7rem; color: #f87171; display: none;" title="Remove this custom widget instance">🗑️ Remove</button>
+                </div>
+              </div>
               <select id="inspectorElementSelect" class="form-select">
                 <option value="header">🏷️ Header (Title, Subtitle, Date & Time)</option>
                 <option value="hero">🏆 Hero Metric (Distance / Main Stat)</option>
@@ -941,6 +1055,9 @@
                 <option value="hrBadge">🩺 Average Heart Rate Badge</option>
                 <option value="brand">🏷️ Social Brand / Watermark</option>
                 <option value="__bg_photo__">🖼️ Background Photo (Pan, Zoom & Fit)</option>
+                <optgroup id="inspectorExtraWidgetsOptgroup" label="Custom Added Widgets">
+                  <!-- Dynamically populated -->
+                </optgroup>
               </select>
             </div>
 
@@ -959,11 +1076,18 @@
               </select>
             </div>
 
+            <!-- Widget / Component Deleted Alert Banner -->
+            <div id="inspectorWidgetDeletedNotice" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; border-radius: 6px; padding: 6px 10px; margin-bottom: 10px; align-items: center; justify-content: space-between;">
+              <span id="inspectorWidgetDeletedNoticeText" style="font-size: 0.72rem; color: #fca5a5; font-weight: 600;">⚠️ This widget is currently deleted and hidden.</span>
+              <button type="button" id="inspectorWidgetReintroduceBtn" class="btn btn-primary" style="padding: 2px 8px; font-size: 0.7rem; background: #10b981; border-color: #10b981; color: #000; font-weight: 700;">➕ Reintroduce Widget</button>
+            </div>
+
             <!-- BACKGROUND BORDER CONTROLS (Resize Only Border - NEW USER REQUIREMENT) -->
             <div id="inspectorBgControlsContainer" class="inspector-card" style="display: none; margin-bottom: 12px; background: rgba(0, 240, 255, 0.04); border: 1px dashed rgba(0, 240, 255, 0.35); border-radius: 8px; padding: 10px;">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                 <span style="font-size: 0.75rem; font-weight: 700; color: #00f0ff;">🔲 Background Border Only</span>
                 <div style="display: flex; gap: 4px;">
+                  <button type="button" id="inspectorReintroduceBgBtn" class="btn btn-secondary" style="padding: 1px 6px; font-size: 0.7rem; color: #10b981; border-color: rgba(16, 185, 129, 0.4); display: none;" title="Reintroduce this deleted background border">➕ Reintroduce Border</button>
                   <button type="button" id="inspectorDeleteBgBtn" class="btn btn-secondary" style="padding: 1px 6px; font-size: 0.7rem; color: #f87171;" title="Delete / Hide this background border">🗑 Delete Border</button>
                   <button type="button" id="inspectorResetBgBtn" class="btn btn-secondary" style="padding: 1px 6px; font-size: 0.7rem;">↺ Reset</button>
                 </div>
@@ -1062,9 +1186,14 @@
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                 <span id="inspectorSubElementTitle" style="font-size: 0.75rem; font-weight: 700; color: var(--accent-volt);">📍 Sub-Element Position & Layer</span>
                 <div style="display: flex; gap: 4px;">
+                  <button type="button" id="inspectorReintroduceSubElemBtn" class="btn btn-secondary" style="padding: 1px 6px; font-size: 0.7rem; color: #10b981; border-color: rgba(16, 185, 129, 0.4); display: none;" title="Reintroduce this deleted element">➕ Reintroduce</button>
                   <button type="button" id="inspectorDeleteSubElemBtn" class="btn btn-secondary" style="padding: 1px 6px; font-size: 0.7rem; color: #f87171;" title="Delete or hide this specific text/sub-element">🗑 Delete / Hide</button>
                   <button type="button" id="inspectorResetSubElemBtn" class="btn btn-secondary" style="padding: 1px 6px; font-size: 0.7rem;">↺ Reset Pos</button>
                 </div>
+              </div>
+              <div id="inspectorSubElemDeletedNotice" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; border-radius: 6px; padding: 6px 10px; margin-bottom: 8px; align-items: center; justify-content: space-between;">
+                <span style="font-size: 0.72rem; color: #fca5a5; font-weight: 600;">⚠️ This item is currently deleted and hidden.</span>
+                <button type="button" id="inspectorSubElemBannerReintroduceBtn" class="btn btn-primary" style="padding: 2px 8px; font-size: 0.7rem; background: #10b981; border-color: #10b981; color: #000; font-weight: 700;">➕ Reintroduce</button>
               </div>
               <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 8px;">
                 Move X, Y, and adjust 3D layer depth (Z-Index) of this specific element.
@@ -1307,7 +1436,7 @@
           <div class="section">
             <div class="section-title">
               <span>Main Header Layout Templates</span>
-              <span style="font-size: 0.7rem; color: var(--accent-volt); font-weight: 600;">17 Designs</span>
+              <span style="font-size: 0.7rem; color: var(--accent-volt); font-weight: 600;">20 Designs</span>
             </div>
             <div style="font-size: 0.72rem; color: var(--text-muted); margin-bottom: 8px;">
               Choose different layouts and typography arrangements for your Title, Subtitle, Date & Time:
@@ -1322,6 +1451,21 @@
                 <div class="choice-card-icon">👑</div>
                 <div class="choice-card-label">Centered Hero</div>
                 <div style="font-size: 0.68rem; color: var(--text-muted);">Bold center title + date pill</div>
+              </div>
+              <div class="choice-card" data-template="centered-crest">
+                <div class="choice-card-icon">🛡️</div>
+                <div class="choice-card-label">Centered Crest</div>
+                <div style="font-size: 0.68rem; color: var(--text-muted);">Symmetrical crest, wings & divider</div>
+              </div>
+              <div class="choice-card" data-template="centered-minimal-clean">
+                <div class="choice-card-icon">➖</div>
+                <div class="choice-card-label">Centered Minimal</div>
+                <div style="font-size: 0.68rem; color: var(--text-muted);">Hairline typographic divider</div>
+              </div>
+              <div class="choice-card" data-template="circular-monogram">
+                <div class="choice-card-icon">⭕</div>
+                <div class="choice-card-label">Circular Monogram</div>
+                <div style="font-size: 0.68rem; color: var(--text-muted);">Centered seal & stacked subtext</div>
               </div>
               <div class="choice-card" data-template="stacked-editorial">
                 <div class="choice-card-icon">📰</div>
@@ -1397,6 +1541,17 @@
                 <div class="choice-card-icon">🏛️</div>
                 <div class="choice-card-label">Architectural Monolith</div>
                 <div style="font-size: 0.68rem; color: var(--text-muted);">Oversized date & clean typography</div>
+              </div>
+            </div>
+
+            <!-- Active Header Template Text Customizer (Dynamic for Selected Template) -->
+            <div id="headerTemplateCustomTextContainer" style="margin-top: 10px; background: rgba(204, 255, 0, 0.04); border: 1px dashed rgba(204, 255, 0, 0.3); border-radius: 8px; padding: 10px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <span style="font-size: 0.75rem; font-weight: 700; color: var(--accent-volt);">📝 Active Header Template Labels & Text</span>
+                <span id="textTabActiveTemplateBadge" style="font-size: 0.7rem; color: var(--text-muted); font-weight: 600;">Modern</span>
+              </div>
+              <div id="headerTemplateCustomFields" class="inspector-text-grid">
+                <!-- Dynamically populated based on active header template -->
               </div>
             </div>
           </div>

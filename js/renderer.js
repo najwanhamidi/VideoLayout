@@ -65,6 +65,7 @@ export const ASPECT_RATIOS = {
   '1:1': { width: 1080, height: 1080, label: '1:1 Square Post' },
   '4:5': { width: 1080, height: 1350, label: '4:5 Portrait Post' },
   '16:9': { width: 1920, height: 1080, label: '16:9 Landscape' },
+  'custom': { width: 1080, height: 1080, label: 'Custom User Defined' },
 };
 
 export class OverlayRenderer {
@@ -186,8 +187,15 @@ export class OverlayRenderer {
   }
 
   getElementOffset(config, widgetKey, partKey) {
-    if (config && config.widgetElementOffsets && config.widgetElementOffsets[widgetKey]) {
-      const offsets = config.widgetElementOffsets[widgetKey];
+    if (config && config.widgetElementOffsets) {
+      let offsets = config.widgetElementOffsets[widgetKey];
+      if (!offsets && widgetKey && widgetKey.includes('_')) {
+        const baseKey = widgetKey.split('_')[0];
+        offsets = config.widgetElementOffsets[baseKey];
+      }
+      if (!offsets) {
+        return { x: 0, y: 0, z: 1, hidden: false, scale: 100, fontFamily: 'default', color: 'default' };
+      }
       let part = offsets[partKey];
       if (!part) {
         if (partKey === 'val') part = offsets['value'];
@@ -268,6 +276,112 @@ export class OverlayRenderer {
     return { ...defaults, ...custom };
   }
 
+
+  getMetricItemOffsets(config, widgetKey, metricKey) {
+    const globalLabel = this.getElementOffset(config, widgetKey, 'label');
+    const globalVal = this.getElementOffset(config, widgetKey, 'val');
+    const itemOff = this.getElementOffset(config, widgetKey, metricKey);
+    const itemLabelOff = this.getElementOffset(config, widgetKey, `${metricKey}Label`);
+    const itemValOff = this.getElementOffset(config, widgetKey, `${metricKey}Val`);
+
+    const labelHidden = globalLabel.hidden || itemOff.hidden || itemLabelOff.hidden;
+    const labelX = globalLabel.x + itemOff.x + itemLabelOff.x;
+    const labelY = globalLabel.y + itemOff.y + itemLabelOff.y;
+    const labelZ = Math.max(globalLabel.z, itemOff.z, itemLabelOff.z);
+    const labelScale = ((globalLabel.scale || 100) / 100) * ((itemOff.scale || 100) / 100) * ((itemLabelOff.scale || 100) / 100);
+    const labelFont = itemLabelOff.fontFamily !== 'default' ? itemLabelOff.fontFamily : (itemOff.fontFamily !== 'default' ? itemOff.fontFamily : globalLabel.fontFamily);
+    const labelColor = itemLabelOff.color !== 'default' ? itemLabelOff.color : (itemOff.color !== 'default' ? itemOff.color : globalLabel.color);
+
+    const valHidden = globalVal.hidden || itemOff.hidden || itemValOff.hidden;
+    const valX = globalVal.x + itemOff.x + itemValOff.x;
+    const valY = globalVal.y + itemOff.y + itemValOff.y;
+    const valZ = Math.max(globalVal.z, itemOff.z, itemValOff.z);
+    const valScale = ((globalVal.scale || 100) / 100) * ((itemOff.scale || 100) / 100) * ((itemValOff.scale || 100) / 100);
+    const valFont = itemValOff.fontFamily !== 'default' ? itemValOff.fontFamily : (itemOff.fontFamily !== 'default' ? itemOff.fontFamily : globalVal.fontFamily);
+    const valColor = itemValOff.color !== 'default' ? itemValOff.color : (itemOff.color !== 'default' ? itemOff.color : globalVal.color);
+
+    return {
+      item: itemOff,
+      label: { x: labelX, y: labelY, z: labelZ, hidden: labelHidden, scale: labelScale, fontFamily: labelFont, color: labelColor },
+      val: { x: valX, y: valY, z: valZ, hidden: valHidden, scale: valScale, fontFamily: valFont, color: valColor }
+    };
+  }
+
+  getMetricFont(config, widgetKey, metricKey, partType = 'label', weight = 'bold', baseSize = 20) {
+    const mOff = this.getMetricItemOffsets(config, widgetKey, metricKey);
+    const target = partType === 'label' ? mOff.label : mOff.val;
+    const el = this.getElementStyle(config, widgetKey);
+    const fontName = (target.fontFamily && target.fontFamily !== 'default')
+      ? target.fontFamily
+      : (el.fontFamily && el.fontFamily !== 'default' ? el.fontFamily : config.fontFamily);
+    const fontFam = this.getFontFamily(fontName);
+    let widgetScale = typeof el.fontSizeScale === 'number' && !isNaN(el.fontSizeScale) ? el.fontSizeScale : 1.0;
+    if (widgetScale > 5) widgetScale = widgetScale / 100;
+    let subScale = typeof target.scale === 'number' && !isNaN(target.scale) ? target.scale : 1.0;
+    const finalSize = Math.max(6, Math.round(baseSize * widgetScale * subScale));
+    return `${weight} ${finalSize}px ${fontFam}`;
+  }
+
+  getSplitItemOffsets(config, widgetKey, splitIdx) {
+    const lapLabelsOff = this.getElementOffset(config, widgetKey, 'lapLabels');
+    const paceLabelsOff = this.getElementOffset(config, widgetKey, 'paceLabels');
+    const barsOff = this.getElementOffset(config, widgetKey, 'bars');
+
+    const splitOff = this.getElementOffset(config, widgetKey, `split_${splitIdx}`);
+    const splitLapOff = this.getElementOffset(config, widgetKey, `split_lap_${splitIdx}`);
+    const splitLabelAliasOff = this.getElementOffset(config, widgetKey, `split_label_${splitIdx}`);
+    const effSplitLapOff = (splitLapOff.x !== 0 || splitLapOff.y !== 0 || splitLapOff.hidden || splitLapOff.color !== 'default' || splitLapOff.scale !== 100)
+      ? splitLapOff : splitLabelAliasOff;
+
+    const splitPaceOff = this.getElementOffset(config, widgetKey, `split_pace_${splitIdx}`);
+    const splitBarOff = this.getElementOffset(config, widgetKey, `split_bar_${splitIdx}`);
+
+    const lapHidden = lapLabelsOff.hidden || splitOff.hidden || effSplitLapOff.hidden;
+    const lapX = lapLabelsOff.x + splitOff.x + effSplitLapOff.x;
+    const lapY = lapLabelsOff.y + splitOff.y + effSplitLapOff.y;
+    const lapZ = Math.max(lapLabelsOff.z, splitOff.z, effSplitLapOff.z);
+    const lapScale = ((lapLabelsOff.scale || 100) / 100) * ((splitOff.scale || 100) / 100) * ((effSplitLapOff.scale || 100) / 100);
+    const lapFont = effSplitLapOff.fontFamily !== 'default' ? effSplitLapOff.fontFamily : (splitOff.fontFamily !== 'default' ? splitOff.fontFamily : lapLabelsOff.fontFamily);
+    const lapColor = effSplitLapOff.color !== 'default' ? effSplitLapOff.color : (splitOff.color !== 'default' ? splitOff.color : lapLabelsOff.color);
+
+    const paceHidden = paceLabelsOff.hidden || splitOff.hidden || splitPaceOff.hidden;
+    const paceX = paceLabelsOff.x + splitOff.x + splitPaceOff.x;
+    const paceY = paceLabelsOff.y + splitOff.y + splitPaceOff.y;
+    const paceZ = Math.max(paceLabelsOff.z, splitOff.z, splitPaceOff.z);
+    const paceScale = ((paceLabelsOff.scale || 100) / 100) * ((splitOff.scale || 100) / 100) * ((splitPaceOff.scale || 100) / 100);
+    const paceFont = splitPaceOff.fontFamily !== 'default' ? splitPaceOff.fontFamily : (splitOff.fontFamily !== 'default' ? splitOff.fontFamily : paceLabelsOff.fontFamily);
+    const paceColor = splitPaceOff.color !== 'default' ? splitPaceOff.color : (splitOff.color !== 'default' ? splitOff.color : paceLabelsOff.color);
+
+    const barHidden = barsOff.hidden || splitOff.hidden || splitBarOff.hidden;
+    const barX = barsOff.x + splitOff.x + splitBarOff.x;
+    const barY = barsOff.y + splitOff.y + splitBarOff.y;
+    const barZ = Math.max(barsOff.z, splitOff.z, splitBarOff.z);
+    const barScale = ((barsOff.scale || 100) / 100) * ((splitOff.scale || 100) / 100) * ((splitBarOff.scale || 100) / 100);
+    const barColor = splitBarOff.color !== 'default' ? splitBarOff.color : (splitOff.color !== 'default' ? splitOff.color : barsOff.color);
+
+    return {
+      split: splitOff,
+      lap: { x: lapX, y: lapY, z: lapZ, hidden: lapHidden, scale: lapScale, fontFamily: lapFont, color: lapColor },
+      pace: { x: paceX, y: paceY, z: paceZ, hidden: paceHidden, scale: paceScale, fontFamily: paceFont, color: paceColor },
+      bar: { x: barX, y: barY, z: barZ, hidden: barHidden, scale: barScale, color: barColor }
+    };
+  }
+
+  getSplitFont(config, widgetKey, splitIdx, partType = 'lap', weight = 'bold', baseSize = 20) {
+    const sOff = this.getSplitItemOffsets(config, widgetKey, splitIdx);
+    const target = partType === 'lap' ? sOff.lap : sOff.pace;
+    const el = this.getElementStyle(config, widgetKey);
+    const fontName = (target.fontFamily && target.fontFamily !== 'default')
+      ? target.fontFamily
+      : (el.fontFamily && el.fontFamily !== 'default' ? el.fontFamily : config.fontFamily);
+    const fontFam = this.getFontFamily(fontName);
+    let widgetScale = typeof el.fontSizeScale === 'number' && !isNaN(el.fontSizeScale) ? el.fontSizeScale : 1.0;
+    if (widgetScale > 5) widgetScale = widgetScale / 100;
+    let subScale = typeof target.scale === 'number' && !isNaN(target.scale) ? target.scale : 1.0;
+    const finalSize = Math.max(6, Math.round(baseSize * widgetScale * subScale));
+    return `${weight} ${finalSize}px ${fontFam}`;
+  }
+
   getEffectiveFont(config, key, weight = 'bold', baseSize = 20) {
     const el = this.getElementStyle(config, key);
     const fontName = el.fontFamily && el.fontFamily !== 'default' ? el.fontFamily : config.fontFamily;
@@ -304,6 +418,31 @@ export class OverlayRenderer {
     return { text, textMuted, accent: elAccent, cardStyle, align, opacity };
   }
 
+  getAspectRatioDimensions(ratioKey, config = null) {
+    if (ratioKey === 'custom' || (config && config.aspectRatio === 'custom')) {
+      const w = (config && config.customWidth) ? parseInt(config.customWidth, 10) : 1080;
+      const h = (config && config.customHeight) ? parseInt(config.customHeight, 10) : 1080;
+      return {
+        width: Math.max(300, Math.min(4000, isNaN(w) ? 1080 : w)),
+        height: Math.max(300, Math.min(4000, isNaN(h) ? 1080 : h)),
+        label: 'Custom'
+      };
+    }
+    return ASPECT_RATIOS[ratioKey] || ASPECT_RATIOS['9:16'];
+  }
+
+  getWidgetAlign(align, defaultAlign = 'left') {
+    if (align === 'left' || align === 'center' || align === 'right') return align;
+    return defaultAlign;
+  }
+
+  getAlignX(align, x, width, pad = 20, defaultAlign = 'left') {
+    const eff = this.getWidgetAlign(align, defaultAlign);
+    if (eff === 'center') return x + width / 2;
+    if (eff === 'right') return x + width - pad;
+    return x + pad;
+  }
+
   /**
    * Main render function
    * @param {Object} activity - Normalized activity data
@@ -311,7 +450,7 @@ export class OverlayRenderer {
    * @param {number} scaleMultiplier - Resolution multiplier (1x preview, 2x export)
    */
   render(activity, config, scaleMultiplier = 1) {
-    const ratioSpec = ASPECT_RATIOS[config.aspectRatio] || ASPECT_RATIOS['9:16'];
+    const ratioSpec = this.getAspectRatioDimensions(config.aspectRatio, config);
     const W = ratioSpec.width * scaleMultiplier;
     const H = ratioSpec.height * scaleMultiplier;
 
@@ -342,6 +481,9 @@ export class OverlayRenderer {
 
     // 2. Render layout
     this.renderLayout(ctx, baseW, baseH, activity, config, theme, accentColor);
+
+    // 2.5 Render Extra Widget Instances (Autonomous duplicate or additional widgets)
+    this.renderExtraWidgetInstances(ctx, baseW, baseH, activity, config, theme, accentColor);
 
     // 3. Render Custom Texts & Stickers
     this.drawCustomTexts(ctx, baseW, baseH, config.customTexts, theme, accentColor);
@@ -525,6 +667,24 @@ export class OverlayRenderer {
         break;
       case 'lap-workout':
         this.renderLapWorkoutLayout(ctx, w, h, activity, config, theme, accent);
+        break;
+      case 'kinetic-centered':
+        this.renderKineticCenteredLayout(ctx, w, h, activity, config, theme, accent);
+        break;
+      case 'marathon-finisher':
+        this.renderMarathonFinisherLayout(ctx, w, h, activity, config, theme, accent);
+        break;
+      case 'tokyo-night':
+        this.renderTokyoNightLayout(ctx, w, h, activity, config, theme, accent);
+        break;
+      case 'ultra-trail':
+        this.renderUltraTrailLayout(ctx, w, h, activity, config, theme, accent);
+        break;
+      case 'swiss-editorial':
+        this.renderSwissEditorialLayout(ctx, w, h, activity, config, theme, accent);
+        break;
+      case 'smartwatch-ultra':
+        this.renderSmartwatchUltraLayout(ctx, w, h, activity, config, theme, accent);
         break;
       case 'story-pro':
       default:
@@ -808,30 +968,276 @@ export class OverlayRenderer {
     this.drawBrandWatermark(ctx, posB.x, posB.y, posB.width, config, theme, accent, posB.height);
   }
 
+  // ==========================================
+  // TEMPLATE 7: KINETIC CENTERED MINIMAL
+  // Symmetrical center-aligned minimalism
+  // ==========================================
+  renderKineticCenteredLayout(ctx, w, h, activity, config, theme, accent) {
+    const pad = w * 0.07;
+    let currY = h * 0.05;
+
+    // 1. Centered Header
+    if (config.showWidgetHeader !== false) {
+      const posH = this.getWidgetPos(config, 'header', pad, currY, w - pad * 2, 90);
+      const nextY = this.drawHeader(ctx, posH.x, posH.y, posH.width, activity, { ...config, headerTemplate: config.headerTemplate || 'centered-crest' }, theme, accent, posH.height);
+      if (!posH.isCustom) currY = nextY + 16;
+    }
+
+    // 2. Route Map (Centered)
+    if (activity.hasRoute && config.showWidgetMap !== false) {
+      const mapH = Math.min(h * 0.28, 300);
+      const posM = this.getWidgetPos(config, 'map', pad, currY, w - pad * 2, mapH);
+      this.drawRouteMap(ctx, posM.x, posM.y, posM.width, posM.height, activity, config, theme, accent);
+      if (!posM.isCustom) currY += posM.height + 16;
+    }
+
+    // 3. Hero Metric (Centered Monolith / Stadium)
+    if (config.showWidgetHero !== false) {
+      const heroH = 110;
+      const posHero = this.getWidgetPos(config, 'hero', pad, currY, w - pad * 2, heroH);
+      const nextY = this.drawHeroStat(ctx, posHero.x, posHero.y, posHero.width, activity, { ...config, heroDesign: config.heroDesign || 'centered-monolith' }, theme, accent, posHero.height);
+      if (!posHero.isCustom) currY = nextY + 16;
+    }
+
+    // 4. Secondary Metrics (Centered Pod Triad)
+    if (config.showWidgetMetrics !== false) {
+      const posMet = this.getWidgetPos(config, 'metrics', pad, currY, w - pad * 2, 85);
+      const nextY = this.drawMetricsGrid(ctx, posMet.x, posMet.y, posMet.width, activity, { ...config, metricsDesign: config.metricsDesign || 'centered-pod-triad' }, theme, accent, 3, posMet.height);
+      if (!posMet.isCustom) currY = nextY + 16;
+    }
+
+    // 5. Elevation or Pace Pulse (If space allows)
+    if (config.showWidgetElevation !== false && activity.trackpoints && activity.trackpoints.length > 2 && currY < h * 0.82) {
+      const posE = this.getWidgetPos(config, 'elevation', pad, currY, w - pad * 2, 80);
+      this.drawElevationProfile(ctx, posE.x, posE.y, posE.width, posE.height, activity, { ...config, elevationDesign: config.elevationDesign || 'centered-mountain-peak' }, theme, accent);
+      currY += posE.height + 14;
+    } else if (config.showWidgetSplits !== false && currY < h * 0.85) {
+      const posS = this.getWidgetPos(config, 'splits', pad, currY, w - pad * 2, 120);
+      currY = this.drawSplitsBarChart(ctx, posS.x, posS.y, posS.width, activity, { ...config, splitsDesign: config.splitsDesign || 'centered-split-pills' }, theme, accent, posS.height) + 14;
+    }
+
+    // 6. Centered Brand
+    const posB = this.getWidgetPos(config, 'brand', pad, h - h * 0.04, w - pad * 2, 26);
+    this.drawBrandWatermark(ctx, posB.x, posB.y, posB.width, { ...config, brandStyle: config.brandStyle || 'centered-cinematic-stamp' }, theme, accent, posB.height);
+  }
+
+  // ==========================================
+  // TEMPLATE 8: MARATHON FINISHER LUXE
+  // Gold & carbon aesthetic, trophy badge & elevation ridge
+  // ==========================================
+  renderMarathonFinisherLayout(ctx, w, h, activity, config, theme, accent) {
+    const pad = w * 0.06;
+    let currY = h * 0.045;
+
+    // 1. Collegiate Shield / Bib Header
+    const posH = this.getWidgetPos(config, 'header', pad, currY, w - pad * 2, 88);
+    currY = this.drawHeader(ctx, posH.x, posH.y, posH.width, activity, { ...config, headerTemplate: config.headerTemplate || 'badge-shield' }, theme, accent, posH.height) + 16;
+
+    // 2. Spotlight Fastest Split / Trophy Card
+    const posSp = this.getWidgetPos(config, 'splitHighlight', pad, currY, w - pad * 2, 115);
+    currY = this.drawSplitHighlightCard(ctx, posSp.x, posSp.y, posSp.width, activity, { ...config, splitHighlightDesign: config.splitHighlightDesign || 'centered-trophy-card' }, theme, accent, posSp.height) + 16;
+
+    // 3. Hero Distance
+    const posHero = this.getWidgetPos(config, 'hero', pad, currY, w - pad * 2, 105);
+    currY = this.drawHeroStat(ctx, posHero.x, posHero.y, posHero.width, activity, config, theme, accent, posHero.height) + 16;
+
+    // 4. Secondary Metrics (2-Col Bold Cards / Scoreboard)
+    const posMet = this.getWidgetPos(config, 'metrics', pad, currY, w - pad * 2, 110);
+    currY = this.drawMetricsGrid(ctx, posMet.x, posMet.y, posMet.width, activity, { ...config, metricsDesign: config.metricsDesign || 'cards-2col' }, theme, accent, 4, posMet.height) + 16;
+
+    // 5. Elevation Profile or Splits
+    if (activity.trackpoints && activity.trackpoints.length > 2 && currY < h * 0.82) {
+      const posE = this.getWidgetPos(config, 'elevation', pad, currY, w - pad * 2, 85);
+      this.drawElevationProfile(ctx, posE.x, posE.y, posE.width, posE.height, activity, config, theme, accent);
+      currY += posE.height + 16;
+    } else if (config.showWidgetSplits !== false && currY < h * 0.85) {
+      const posS = this.getWidgetPos(config, 'splits', pad, currY, w - pad * 2, 130);
+      currY = this.drawSplitsBarChart(ctx, posS.x, posS.y, posS.width, activity, config, theme, accent, posS.height) + 16;
+    }
+
+    // 6. Brand
+    const posB = this.getWidgetPos(config, 'brand', pad, h - h * 0.035, w - pad * 2, 26);
+    this.drawBrandWatermark(ctx, posB.x, posB.y, posB.width, config, theme, accent, posB.height);
+  }
+
+  // ==========================================
+  // TEMPLATE 9: TOKYO NIGHT HUD
+  // Cyberpunk neon telemetry, flight instruments & speed pulse
+  // ==========================================
+  renderTokyoNightLayout(ctx, w, h, activity, config, theme, accent) {
+    const pad = w * 0.055;
+    let currY = h * 0.045;
+
+    // 1. Flight HUD Header
+    const posH = this.getWidgetPos(config, 'header', pad, currY, w - pad * 2, 92);
+    currY = this.drawHeader(ctx, posH.x, posH.y, posH.width, activity, { ...config, headerTemplate: config.headerTemplate || 'hud-flight' }, theme, accent, posH.height) + 14;
+
+    // 2. Neon Pulse Map
+    if (activity.hasRoute && config.showWidgetMap !== false) {
+      const mapH = Math.min(h * 0.28, 280);
+      const posM = this.getWidgetPos(config, 'map', pad, currY, w - pad * 2, mapH);
+      this.drawRouteMap(ctx, posM.x, posM.y, posM.width, posM.height, activity, { ...config, mapDesign: config.mapDesign || 'neon-pulse' }, theme, accent);
+      currY += posM.height + 14;
+    }
+
+    // 3. Hero Bracket Box
+    const posHero = this.getWidgetPos(config, 'hero', pad, currY, w - pad * 2, 105);
+    currY = this.drawHeroStat(ctx, posHero.x, posHero.y, posHero.width, activity, { ...config, heroDesign: config.heroDesign || 'boxed-bracket' }, theme, accent, posHero.height) + 14;
+
+    // 4. Vertical Stacked HUD Telemetry Rows
+    const posMet = this.getWidgetPos(config, 'metrics', pad, currY, w - pad * 2, 110);
+    currY = this.drawMetricsGrid(ctx, posMet.x, posMet.y, posMet.width, activity, { ...config, metricsDesign: config.metricsDesign || 'vertical-stacked-hud' }, theme, accent, 4, posMet.height) + 14;
+
+    // 5. Pace Speed Pulse or HR LCD
+    if (config.showWidgetPaceGraph && currY < h * 0.84) {
+      const posP = this.getWidgetPos(config, 'paceGraph', pad, currY, w - pad * 2, 85);
+      currY = this.drawPaceGraph(ctx, posP.x, posP.y, posP.width, posP.height, activity, { ...config, paceGraphDesign: config.paceGraphDesign || 'centered-speed-pulse' }, theme, accent) + 14;
+    } else if (activity.avgHr && currY < h * 0.86) {
+      const posHr = this.getWidgetPos(config, 'hrBadge', pad, currY, w - pad * 2, 70);
+      currY = this.drawAvgHeartRateBadge(ctx, posHr.x, posHr.y, posHr.width, activity, { ...config, hrBadgeDesign: config.hrBadgeDesign || 'lcd-pulse' }, theme, accent, posHr.height) + 14;
+    }
+
+    // 6. Brand
+    const posB = this.getWidgetPos(config, 'brand', pad, h - h * 0.035, w - pad * 2, 26);
+    this.drawBrandWatermark(ctx, posB.x, posB.y, posB.width, config, theme, accent, posB.height);
+  }
+
+  // ==========================================
+  // TEMPLATE 10: ULTRA TRAIL RIDGE
+  // Mountain elevation profile, split ladder & trail telemetry
+  // ==========================================
+  renderUltraTrailLayout(ctx, w, h, activity, config, theme, accent) {
+    const pad = w * 0.06;
+    let currY = h * 0.045;
+
+    // 1. Trail Stamp Header
+    const posH = this.getWidgetPos(config, 'header', pad, currY, w - pad * 2, 85);
+    currY = this.drawHeader(ctx, posH.x, posH.y, posH.width, activity, { ...config, headerTemplate: config.headerTemplate || 'minimalist-stamp' }, theme, accent, posH.height) + 14;
+
+    // 2. Prominent Mountain Elevation Profile (Key Feature)
+    if (activity.trackpoints && activity.trackpoints.length > 2) {
+      const elevH = Math.min(h * 0.24, 250);
+      const posE = this.getWidgetPos(config, 'elevation', pad, currY, w - pad * 2, elevH);
+      this.drawElevationProfile(ctx, posE.x, posE.y, posE.width, posE.height, activity, { ...config, elevationDesign: config.elevationDesign || 'mountain-peaks' }, theme, accent);
+      currY += posE.height + 16;
+    }
+
+    // 3. Hero Stat (Capsule / Monolith)
+    const posHero = this.getWidgetPos(config, 'hero', pad, currY, w - pad * 2, 105);
+    currY = this.drawHeroStat(ctx, posHero.x, posHero.y, posHero.width, activity, { ...config, heroDesign: config.heroDesign || 'centered-stadium-capsule' }, theme, accent, posHero.height) + 16;
+
+    // 4. Horizontal Chips / Timeline
+    const posMet = this.getWidgetPos(config, 'metrics', pad, currY, w - pad * 2, 85);
+    currY = this.drawMetricsGrid(ctx, posMet.x, posMet.y, posMet.width, activity, { ...config, metricsDesign: config.metricsDesign || 'horizontal-chips' }, theme, accent, 3, posMet.height) + 16;
+
+    // 5. Splits Timeline Ladder
+    if (config.showWidgetSplits !== false && currY < h * 0.86) {
+      const posS = this.getWidgetPos(config, 'splits', pad, currY, w - pad * 2, 130);
+      currY = this.drawSplitsBarChart(ctx, posS.x, posS.y, posS.width, activity, { ...config, splitsDesign: config.splitsDesign || 'centered-split-ladder' }, theme, accent, posS.height) + 16;
+    }
+
+    // 6. Brand
+    const posB = this.getWidgetPos(config, 'brand', pad, h - h * 0.035, w - pad * 2, 26);
+    this.drawBrandWatermark(ctx, posB.x, posB.y, posB.width, config, theme, accent, posB.height);
+  }
+
+  // ==========================================
+  // TEMPLATE 11: SWISS ATHLETIC EDITORIAL
+  // High-fashion athletic magazine typography & bold 2-col stats
+  // ==========================================
+  renderSwissEditorialLayout(ctx, w, h, activity, config, theme, accent) {
+    const pad = w * 0.07;
+    let currY = h * 0.05;
+
+    // 1. Magazine Cover Header
+    const posH = this.getWidgetPos(config, 'header', pad, currY, w - pad * 2, 95);
+    currY = this.drawHeader(ctx, posH.x, posH.y, posH.width, activity, { ...config, headerTemplate: config.headerTemplate || 'magazine-cover' }, theme, accent, posH.height) + 18;
+
+    // 2. Bold Minimalist Hero Line
+    const posHero = this.getWidgetPos(config, 'hero', pad, currY, w - pad * 2, 105);
+    currY = this.drawHeroStat(ctx, posHero.x, posHero.y, posHero.width, activity, { ...config, heroDesign: config.heroDesign || 'minimal-line' }, theme, accent, posHero.height) + 18;
+
+    // 3. 2-Column Bold Stat Cards
+    const posMet = this.getWidgetPos(config, 'metrics', pad, currY, w - pad * 2, 115);
+    currY = this.drawMetricsGrid(ctx, posMet.x, posMet.y, posMet.width, activity, { ...config, metricsDesign: config.metricsDesign || 'cards-2col' }, theme, accent, 4, posMet.height) + 18;
+
+    // 4. Split Table or Route Map
+    if (activity.hasRoute && config.showWidgetMap !== false && currY < h * 0.72) {
+      const mapH = Math.min(h * 0.22, 220);
+      const posM = this.getWidgetPos(config, 'map', pad, currY, w - pad * 2, mapH);
+      this.drawRouteMap(ctx, posM.x, posM.y, posM.width, posM.height, activity, { ...config, mapDesign: config.mapDesign || 'minimal' }, theme, accent);
+      currY += posM.height + 18;
+    } else if (config.showWidgetSplits !== false && currY < h * 0.85) {
+      const posS = this.getWidgetPos(config, 'splits', pad, currY, w - pad * 2, 130);
+      currY = this.drawSplitsBarChart(ctx, posS.x, posS.y, posS.width, activity, { ...config, splitsDesign: config.splitsDesign || 'pace-table' }, theme, accent, posS.height) + 18;
+    }
+
+    // 5. Brand
+    const posB = this.getWidgetPos(config, 'brand', pad, h - h * 0.035, w - pad * 2, 26);
+    this.drawBrandWatermark(ctx, posB.x, posB.y, posB.width, { ...config, brandStyle: 'nike' }, theme, accent, posB.height);
+  }
+
+  // ==========================================
+  // TEMPLATE 12: WATCH FACE MODULAR
+  // Smartwatch complication gauges & radial pods
+  // ==========================================
+  renderSmartwatchUltraLayout(ctx, w, h, activity, config, theme, accent) {
+    const pad = w * 0.06;
+    let currY = h * 0.05;
+
+    // 1. Monogram Header
+    const posH = this.getWidgetPos(config, 'header', pad, currY, w - pad * 2, 90);
+    currY = this.drawHeader(ctx, posH.x, posH.y, posH.width, activity, { ...config, headerTemplate: config.headerTemplate || 'circular-monogram' }, theme, accent, posH.height) + 16;
+
+    // 2. Speedometer / Radial Pod Hero
+    const posHero = this.getWidgetPos(config, 'hero', pad, currY, w - pad * 2, 115);
+    currY = this.drawHeroStat(ctx, posHero.x, posHero.y, posHero.width, activity, { ...config, heroDesign: config.heroDesign || 'speedometer' }, theme, accent, posHero.height) + 16;
+
+    // 3. Circular Gauges / Pill Clusters
+    const posMet = this.getWidgetPos(config, 'metrics', pad, currY, w - pad * 2, 95);
+    currY = this.drawMetricsGrid(ctx, posMet.x, posMet.y, posMet.width, activity, { ...config, metricsDesign: config.metricsDesign || 'circular-gauges' }, theme, accent, 3, posMet.height) + 16;
+
+    // 4. Cardiac Halo HR Badge
+    if (activity.avgHr && currY < h * 0.84) {
+      const posHr = this.getWidgetPos(config, 'hrBadge', pad, currY, w - pad * 2, 70);
+      currY = this.drawAvgHeartRateBadge(ctx, posHr.x, posHr.y, posHr.width, activity, { ...config, hrBadgeDesign: config.hrBadgeDesign || 'centered-heart-crest' }, theme, accent, posHr.height) + 16;
+    }
+
+    // 5. Elevation or Pace Pulse
+    if (config.showWidgetPaceGraph && currY < h * 0.88) {
+      const posP = this.getWidgetPos(config, 'paceGraph', pad, currY, w - pad * 2, 80);
+      currY = this.drawPaceGraph(ctx, posP.x, posP.y, posP.width, posP.height, activity, { ...config, paceGraphDesign: config.paceGraphDesign || 'centered-speed-pulse' }, theme, accent) + 16;
+    }
+
+    // 6. Brand
+    const posB = this.getWidgetPos(config, 'brand', pad, h - h * 0.035, w - pad * 2, 26);
+    this.drawBrandWatermark(ctx, posB.x, posB.y, posB.width, config, theme, accent, posB.height);
+  }
+
   // =========================================================================
   // WIDGET 1: HEADER
   // Designs: 'modern', 'editorial', 'athletic', 'pill', 'retro-cyber', 'minimalist-stamp', 'badge-shield'
   // =========================================================================
-  drawHeader(ctx, x, y, width, activity, config, theme, accent, customH = null) {
+  drawHeader(ctx, x, y, width, activity, config, theme, accent, customH = null, widgetKey = 'header') {
     ctx.save();
-    const elStyle = this.getElementStyle(config, 'header');
-    const { text, textMuted, accent: elAccent, cardStyle, align, opacity } = this.getEffectiveColors(config, theme, accent, 'header');
+    const elStyle = this.getElementStyle(config, widgetKey);
+    const { text, textMuted, accent: elAccent, cardStyle, align, opacity } = this.getEffectiveColors(config, theme, accent, widgetKey);
     if (opacity < 1) ctx.globalAlpha = opacity;
 
     const font = this.getFontFamily(elStyle.fontFamily !== 'default' ? elStyle.fontFamily : config.fontFamily);
     const design = config.headerTemplate || config.headerDesign || 'modern';
-    let title = this.getTextOverride(config, 'header', 'title', config.customTitle || activity.title || 'Morning Run');
-    let dateText = this.getTextOverride(config, 'header', 'subtitle', config.customSubtitle || `${activity.dateFormatted} • ${activity.timeFormatted}`);
-    let runnerName = this.getTextOverride(config, 'header', 'runner', config.runnerName || '@runner');
-    let location = this.getTextOverride(config, 'header', 'location', config.locationName || '');
-    let weatherText = this.getTextOverride(config, 'header', 'weather', config.weatherText || '');
+    let title = this.getTextOverride(config, widgetKey, 'title', config.customTitle || activity.title || 'Morning Run');
+    let dateText = this.getTextOverride(config, widgetKey, 'subtitle', config.customSubtitle || `${activity.dateFormatted} • ${activity.timeFormatted}`);
+    let runnerName = this.getTextOverride(config, widgetKey, 'runner', config.runnerName || '@runner');
+    let location = this.getTextOverride(config, widgetKey, 'location', config.locationName || '');
+    let weatherText = this.getTextOverride(config, widgetKey, 'weather', config.weatherText || '');
 
     // Sub-element X, Y, Z offsets
-    const offTitle = this.getElementOffset(config, 'header', 'title');
-    const offSub = this.getElementOffset(config, 'header', 'subtitle');
-    const offRunner = this.getElementOffset(config, 'header', 'runner');
-    const offLoc = this.getElementOffset(config, 'header', 'location');
-    const offWeather = this.getElementOffset(config, 'header', 'weather');
+    const offTitle = this.getElementOffset(config, widgetKey, 'title');
+    const offSub = this.getElementOffset(config, widgetKey, 'subtitle');
+    const offRunner = this.getElementOffset(config, widgetKey, 'runner');
+    const offLoc = this.getElementOffset(config, widgetKey, 'location');
+    const offWeather = this.getElementOffset(config, widgetKey, 'weather');
 
     const showLocation = config.headerShowLocation !== false && config.showLocation !== false && !offLoc.hidden;
     location = showLocation ? location : '';
@@ -842,10 +1248,117 @@ export class OverlayRenderer {
     if (!showLocation) location = '';
     if (offWeather.hidden) weatherText = '';
 
+    // TEMPLATE: CENTERED ATHLETIC CREST
+    if (design === 'centered-crest') {
+      const h = customH || 98;
+      this.drawWidgetCardBg(ctx, widgetKey, x, y, width, h, config, theme);
+      const effAlign = this.getWidgetAlign(align, 'center');
+      const cx = this.getAlignX(effAlign, x, width, 24, 'center');
+      ctx.textAlign = effAlign;
+
+      this.applyZDepth(ctx, offRunner.z);
+      ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'runner', elAccent);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'runner', 'bold', 11);
+      ctx.fillText(effAlign === 'center' ? `★  ${runnerName.toUpperCase()}  ★` : runnerName.toUpperCase(), cx + offRunner.x, y + 24 + offRunner.y);
+
+      this.applyZDepth(ctx, offTitle.z);
+      ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'title', text);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'title', 'bold', 32);
+      ctx.fillText(title.toUpperCase(), cx + offTitle.x, y + 58 + offTitle.y);
+
+      if (effAlign === 'center') {
+        const titleW = ctx.measureText(title.toUpperCase()).width;
+        const lineLen = Math.max(20, (width - titleW - 60) / 2);
+        ctx.strokeStyle = elAccent + '66';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x + 20, y + 50); ctx.lineTo(x + 20 + lineLen, y + 50);
+        ctx.moveTo(x + width - 20 - lineLen, y + 50); ctx.lineTo(x + width - 20, y + 50);
+        ctx.stroke();
+      }
+
+      this.applyZDepth(ctx, offSub.z);
+      ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'subtitle', textMuted);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'subtitle', '500', 12);
+      ctx.fillText(`${dateText}${location ? '  •  ' + location : ''}${weatherText ? '  •  ' + weatherText : ''}`, cx + offSub.x, y + 80 + offSub.y);
+
+      ctx.restore();
+      this.recordBounds(widgetKey, 'Header', x, y, width, h);
+      return y + h;
+    }
+
+    // TEMPLATE: CENTERED MINIMAL CLEAN
+    if (design === 'centered-minimal-clean') {
+      const h = customH || 86;
+      this.drawWidgetCardBg(ctx, widgetKey, x, y, width, h, config, theme);
+      const effAlign = this.getWidgetAlign(align, 'center');
+      const cx = this.getAlignX(effAlign, x, width, 24, 'center');
+      ctx.textAlign = effAlign;
+
+      this.applyZDepth(ctx, offTitle.z);
+      ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'title', text);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'title', 'bold', 30);
+      ctx.fillText(title, cx + offTitle.x, y + 36 + offTitle.y);
+
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x + 24, y + 48); ctx.lineTo(x + width - 24, y + 48);
+      ctx.stroke();
+
+      this.applyZDepth(ctx, offSub.z);
+      ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'subtitle', elAccent);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'subtitle', '600', 12);
+      ctx.fillText(`${dateText}   //   ${runnerName}${location ? '   //   ' + location : ''}`, cx + offSub.x, y + 70 + offSub.y);
+
+      ctx.restore();
+      this.recordBounds(widgetKey, 'Header', x, y, width, h);
+      return y + h;
+    }
+
+    // TEMPLATE: CIRCULAR RUNNER MONOGRAM
+    if (design === 'circular-monogram') {
+      const h = customH || 105;
+      this.drawWidgetCardBg(ctx, widgetKey, x, y, width, h, config, theme);
+      const effAlign = this.getWidgetAlign(align, 'center');
+      const cx = this.getAlignX(effAlign, x, width, 24, 'center');
+      ctx.textAlign = effAlign;
+
+      const monoR = 14;
+      const monoY = y + 20;
+      const monoX = effAlign === 'center' ? x + width / 2 : effAlign === 'right' ? x + width - 36 : x + 36;
+      const defaultInitials = (runnerName.replace(/[^a-zA-Z0-9]/g, '').slice(0, 2) || 'RN').toUpperCase();
+      const initials = this.getTextOverride(config, widgetKey, 'monogram', defaultInitials);
+      const offMono = this.getElementOffset(config, widgetKey, 'monogram');
+      if (!offMono.hidden && initials) {
+        ctx.fillStyle = elAccent;
+        ctx.beginPath(); ctx.arc(monoX + offMono.x, monoY + offMono.y, monoR, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#000000';
+        ctx.font = 'bold 12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(initials, monoX + offMono.x, monoY + 4 + offMono.y);
+      }
+
+      ctx.textAlign = effAlign;
+      this.applyZDepth(ctx, offTitle.z);
+      ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'title', text);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'title', 'bold', 28);
+      ctx.fillText(title.toUpperCase(), cx + offTitle.x, y + 64 + offTitle.y);
+
+      this.applyZDepth(ctx, offSub.z);
+      ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'subtitle', textMuted);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'subtitle', '500', 12);
+      ctx.fillText(`${dateText}   •   ${runnerName}${location ? '   •   ' + location : ''}`, cx + offSub.x, y + 86 + offSub.y);
+
+      ctx.restore();
+      this.recordBounds(widgetKey, 'Header', x, y, width, h);
+      return y + h;
+    }
+
     // TEMPLATE: HUD FLIGHT INSTRUMENT
     if (design === 'hud-flight') {
       const h = customH || 96;
-      this.drawWidgetCardBg(ctx, 'header', x, y, width, h, config, theme);
+      this.drawWidgetCardBg(ctx, widgetKey, x, y, width, h, config, theme);
       // Top flight bracket ticks
       ctx.strokeStyle = elAccent;
       ctx.lineWidth = 1.5;
@@ -854,30 +1367,45 @@ export class OverlayRenderer {
       ctx.moveTo(x + width - 12, y + 16); ctx.lineTo(x + width - 12, y + 8); ctx.lineTo(x + width - 36, y + 8);
       ctx.stroke();
 
-      this.applyZDepth(ctx, offRunner.z);
-      ctx.textAlign = 'left';
-      ctx.fillStyle = this.getSubPartColor(config, 'header', 'runner', elAccent);
-      ctx.font = this.getSubPartFont(config, 'header', 'runner', 'bold', 11);
-      ctx.fillText(`▲ RUN_TELEMETRY // ${runnerName.toUpperCase()}`, x + 20 + offRunner.x, y + 26 + offRunner.y);
+      const flightPrompt = this.getTextOverride(config, widgetKey, 'flightPrompt', '▲ RUN_TELEMETRY');
+      const offFlightPrompt = this.getElementOffset(config, widgetKey, 'flightPrompt');
+      if (!offRunner.hidden || !offFlightPrompt.hidden) {
+        this.applyZDepth(ctx, offRunner.z);
+        ctx.textAlign = 'left';
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'runner', elAccent);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'runner', 'bold', 11);
+        const p = (!offFlightPrompt.hidden && flightPrompt) ? `${flightPrompt} ` : '';
+        const r = (!offRunner.hidden && runnerName) ? `// ${runnerName.toUpperCase()}` : '';
+        ctx.fillText(`${p}${r}`.trim(), x + 20 + offRunner.x, y + 26 + offRunner.y);
+      }
 
-      this.applyZDepth(ctx, offTitle.z);
-      ctx.fillStyle = this.getSubPartColor(config, 'header', 'title', text);
-      ctx.font = this.getSubPartFont(config, 'header', 'title', 'bold', 30);
-      ctx.fillText(title.toUpperCase(), x + 20 + offTitle.x, y + 58 + offTitle.y);
+      if (!offTitle.hidden && title) {
+        this.applyZDepth(ctx, offTitle.z);
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'title', text);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'title', 'bold', 30);
+        ctx.fillText(title.toUpperCase(), x + 20 + offTitle.x, y + 58 + offTitle.y);
+      }
 
-      this.applyZDepth(ctx, offSub.z);
-      ctx.fillStyle = this.getSubPartColor(config, 'header', 'subtitle', textMuted);
-      ctx.font = this.getSubPartFont(config, 'header', 'subtitle', '500', 12);
-      ctx.fillText(`${dateText}${location ? ' • ' + location : ''}`, x + 20 + offSub.x, y + 80 + offSub.y);
+      if (!offSub.hidden && (dateText || location)) {
+        this.applyZDepth(ctx, offSub.z);
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'subtitle', textMuted);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'subtitle', '500', 12);
+        ctx.fillText(`${dateText}${location ? ' • ' + location : ''}`, x + 20 + offSub.x, y + 80 + offSub.y);
+      }
 
-      this.applyZDepth(ctx, offWeather.z);
-      ctx.textAlign = 'right';
-      ctx.fillStyle = this.getSubPartColor(config, 'header', 'weather', elAccent);
-      ctx.font = this.getSubPartFont(config, 'header', 'weather', 'bold', 11);
-      ctx.fillText(weatherText || 'GPS LOCK: 100%', x + width - 20 + offWeather.x, y + 26 + offWeather.y);
+      const flightStatus = this.getTextOverride(config, widgetKey, 'flightStatus', 'GPS LOCK: 100%');
+      const offFlightStatus = this.getElementOffset(config, widgetKey, 'flightStatus');
+      if (!offWeather.hidden || !offFlightStatus.hidden) {
+        this.applyZDepth(ctx, offWeather.z);
+        ctx.textAlign = 'right';
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'weather', elAccent);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'weather', 'bold', 11);
+        const st = weatherText || flightStatus;
+        ctx.fillText(st, x + width - 20 + offWeather.x, y + 26 + offWeather.y);
+      }
 
       ctx.restore();
-      this.recordBounds('header', 'Header', x, y, width, h);
+      this.recordBounds(widgetKey, 'Header', x, y, width, h);
       return y + h;
     }
 
@@ -885,7 +1413,7 @@ export class OverlayRenderer {
     if (design === 'race-ticker') {
       const h = customH || 88;
       ctx.save();
-      this.drawWidgetCardBg(ctx, 'header', x, y, width, h, config, theme);
+      this.drawWidgetCardBg(ctx, widgetKey, x, y, width, h, config, theme);
 
       // Top racing hazard stripes
       const sw = 10;
@@ -896,46 +1424,46 @@ export class OverlayRenderer {
 
       this.applyZDepth(ctx, offTitle.z);
       ctx.textAlign = 'left';
-      ctx.fillStyle = this.getSubPartColor(config, 'header', 'title', text);
-      ctx.font = this.getSubPartFont(config, 'header', 'title', 'bold', 30);
+      ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'title', text);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'title', 'bold', 30);
       ctx.fillText(title.toUpperCase(), x + 20 + offTitle.x, y + 46 + offTitle.y);
 
       this.applyZDepth(ctx, offSub.z);
-      ctx.fillStyle = this.getSubPartColor(config, 'header', 'subtitle', elAccent);
-      ctx.font = this.getSubPartFont(config, 'header', 'subtitle', 'bold', 12);
+      ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'subtitle', elAccent);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'subtitle', 'bold', 12);
       ctx.fillText(`⚡ ${dateText}  •  ${runnerName}`, x + 20 + offSub.x, y + 72 + offSub.y);
 
       if (location) {
         this.applyZDepth(ctx, offLoc.z);
         ctx.textAlign = 'right';
-        ctx.fillStyle = this.getSubPartColor(config, 'header', 'location', textMuted);
-        ctx.font = this.getSubPartFont(config, 'header', 'location', 'bold', 12);
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'location', textMuted);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'location', 'bold', 12);
         ctx.fillText(location.toUpperCase(), x + width - 20 + offLoc.x, y + 46 + offLoc.y);
       }
 
       ctx.restore();
       ctx.restore();
-      this.recordBounds('header', 'Header', x, y, width, h);
+      this.recordBounds(widgetKey, 'Header', x, y, width, h);
       return y + h;
     }
 
     // TEMPLATE: CENTERED HERO
     if (design === 'centered-hero') {
       const h = customH || 102;
-      this.drawWidgetCardBg(ctx, 'header', x, y, width, h, config, theme);
+      this.drawWidgetCardBg(ctx, widgetKey, x, y, width, h, config, theme);
       ctx.textAlign = 'center';
 
       // Top Runner Tag
       this.applyZDepth(ctx, offRunner.z);
-      ctx.fillStyle = this.getSubPartColor(config, 'header', 'runner', elAccent);
-      ctx.font = this.getSubPartFont(config, 'header', 'runner', 'bold', 12);
+      ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'runner', elAccent);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'runner', 'bold', 12);
       ctx.letterSpacing = '2px';
       ctx.fillText(`★  ${runnerName.toUpperCase()}  ★`, x + width / 2 + offRunner.x, y + 24 + offRunner.y);
 
       // Main Title
       this.applyZDepth(ctx, offTitle.z);
-      ctx.fillStyle = this.getSubPartColor(config, 'header', 'title', text);
-      ctx.font = this.getSubPartFont(config, 'header', 'title', 'bold', 34);
+      ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'title', text);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'title', 'bold', 34);
       ctx.shadowColor = 'rgba(0,0,0,0.6)';
       ctx.shadowBlur = 8;
       ctx.fillText(title.toUpperCase(), x + width / 2 + offTitle.x, y + 58 + offTitle.y);
@@ -951,36 +1479,36 @@ export class OverlayRenderer {
       ctx.lineWidth = 1;
       ctx.stroke();
 
-      ctx.fillStyle = this.getSubPartColor(config, 'header', 'subtitle', elAccent);
-      ctx.font = this.getSubPartFont(config, 'header', 'subtitle', '600', 11);
+      ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'subtitle', elAccent);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'subtitle', '600', 11);
       ctx.fillText(`${dateText}${location ? ' • ' + location : ''}`, x + width / 2 + offSub.x, y + 84 + offSub.y);
 
       ctx.restore();
-      this.recordBounds('header', 'Header', x, y, width, h);
+      this.recordBounds(widgetKey, 'Header', x, y, width, h);
       return y + h;
     }
 
     // TEMPLATE: SPLIT BANNER (CALENDAR DATE STAMP BOX)
     if (design === 'split-banner') {
       const h = customH || 96;
-      this.drawWidgetCardBg(ctx, 'header', x, y, width, h, config, theme);
+      this.drawWidgetCardBg(ctx, widgetKey, x, y, width, h, config, theme);
 
       const dateParts = dateText.split('•').map((s) => s.trim());
 
       this.applyZDepth(ctx, offRunner.z);
       ctx.textAlign = 'left';
-      ctx.fillStyle = this.getSubPartColor(config, 'header', 'runner', elAccent);
-      ctx.font = this.getSubPartFont(config, 'header', 'runner', 'bold', 12);
+      ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'runner', elAccent);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'runner', 'bold', 12);
       ctx.fillText(runnerName.toUpperCase(), x + 20 + offRunner.x, y + 24 + offRunner.y);
 
       this.applyZDepth(ctx, offTitle.z);
-      ctx.fillStyle = this.getSubPartColor(config, 'header', 'title', text);
-      ctx.font = this.getSubPartFont(config, 'header', 'title', 'bold', 30);
+      ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'title', text);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'title', 'bold', 30);
       ctx.fillText(title, x + 20 + offTitle.x, y + 56 + offTitle.y);
 
       this.applyZDepth(ctx, offSub.z);
-      ctx.fillStyle = this.getSubPartColor(config, 'header', 'subtitle', textMuted);
-      ctx.font = this.getSubPartFont(config, 'header', 'subtitle', '500', 13);
+      ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'subtitle', textMuted);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'subtitle', '500', 13);
       ctx.fillText(location ? `📍 ${location} • ${dateParts[1] || ''}` : (dateParts[1] || dateText), x + 20 + offSub.x, y + 78 + offSub.y);
 
       // Right Side: Calendar Stamp Box (66x74)
@@ -1018,59 +1546,68 @@ export class OverlayRenderer {
       ctx.fillText(activity.timeFormatted ? activity.timeFormatted.split(' ')[0] : '06:30', calX + calW / 2, calY + 65);
 
       ctx.restore();
-      this.recordBounds('header', 'Header', x, y, width, h);
+      this.recordBounds(widgetKey, 'Header', x, y, width, h);
       return y + h;
     }
 
     // TEMPLATE: MINIMAL TOP BAR
     if (design === 'minimal-topbar') {
       const h = customH || 52;
-      this.drawWidgetCardBg(ctx, 'header', x, y, width, h, config, theme);
+      this.drawWidgetCardBg(ctx, widgetKey, x, y, width, h, config, theme);
 
       this.applyZDepth(ctx, offTitle.z);
       ctx.textAlign = 'left';
       ctx.fillStyle = elAccent;
-      ctx.font = this.getSubPartFont(config, 'header', 'title', 'bold', 12);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'title', 'bold', 12);
       ctx.fillText('⚡', x + 20 + offTitle.x, y + 32 + offTitle.y);
 
       ctx.fillStyle = text;
-      ctx.font = this.getSubPartFont(config, 'header', 'title', 'bold', 16);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'title', 'bold', 16);
       ctx.fillText(title, x + 40 + offTitle.x, y + 33 + offTitle.y);
 
       this.applyZDepth(ctx, offSub.z);
       const titleW = ctx.measureText(title).width;
       ctx.fillStyle = textMuted;
-      ctx.font = this.getSubPartFont(config, 'header', 'subtitle', '500', 13);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'subtitle', '500', 13);
       ctx.fillText(`•   ${dateText}`, x + 52 + titleW + offSub.x, y + 33 + offSub.y);
 
       this.applyZDepth(ctx, offRunner.z);
       ctx.textAlign = 'right';
       ctx.fillStyle = elAccent;
-      ctx.font = this.getSubPartFont(config, 'header', 'runner', 'bold', 13);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'runner', 'bold', 13);
       ctx.fillText(runnerName, x + width - 20 + offRunner.x, y + 33 + offRunner.y);
 
       ctx.restore();
-      this.recordBounds('header', 'Header', x, y, width, h);
+      this.recordBounds(widgetKey, 'Header', x, y, width, h);
       return y + h;
     }
 
     // TEMPLATE: MAGAZINE COVER
     if (design === 'magazine-cover') {
       const h = customH || 104;
-      this.drawWidgetCardBg(ctx, 'header', x, y, width, h, config, theme);
+      this.drawWidgetCardBg(ctx, widgetKey, x, y, width, h, config, theme);
       const padX = (cardStyle !== 'floating') ? 20 : 0;
 
-      this.applyZDepth(ctx, offRunner.z);
-      ctx.textAlign = 'left';
-      ctx.fillStyle = elAccent;
-      ctx.font = this.getSubPartFont(config, 'header', 'runner', 'bold', 11);
-      ctx.letterSpacing = '3px';
-      ctx.fillText(`// RUNNER'S LOG — ISSUE 2026 //`, x + padX + offRunner.x, y + 20 + offRunner.y);
+      const defaultTagline = "// RUNNER'S LOG — ISSUE 2026 //";
+      const taglineText = this.getTextOverride(config, widgetKey, 'tagline', defaultTagline);
+      const offTagline = this.getElementOffset(config, widgetKey, 'tagline');
+      if (!offTagline.hidden && taglineText) {
+        this.applyZDepth(ctx, offTagline.z || offRunner.z);
+        ctx.textAlign = 'left';
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'tagline', elAccent);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'tagline', 'bold', 11);
+        ctx.letterSpacing = '3px';
+        ctx.fillText(taglineText, x + padX + offTagline.x, y + 20 + offTagline.y);
+      }
 
-      this.applyZDepth(ctx, offTitle.z);
-      ctx.fillStyle = text;
-      ctx.font = this.getSubPartFont(config, 'header', 'title', 'bold', 38);
-      ctx.fillText(title.toUpperCase(), x + padX + offTitle.x, y + 60 + offTitle.y);
+      if (!offTitle.hidden && title) {
+        this.applyZDepth(ctx, offTitle.z);
+        ctx.textAlign = 'left';
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'title', text);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'title', 'bold', 38);
+        ctx.letterSpacing = '0px';
+        ctx.fillText(title.toUpperCase(), x + padX + offTitle.x, y + 60 + offTitle.y);
+      }
 
       ctx.strokeStyle = elAccent;
       ctx.lineWidth = 1.5;
@@ -1079,25 +1616,34 @@ export class OverlayRenderer {
       ctx.lineTo(x + width - padX, y + 72);
       ctx.stroke();
 
-      this.applyZDepth(ctx, offSub.z);
-      ctx.fillStyle = textMuted;
-      ctx.font = this.getSubPartFont(config, 'header', 'subtitle', '500', 13);
-      ctx.fillText(`${dateText}${location ? '   |   ' + location : ''}`, x + padX + offSub.x, y + 90 + offSub.y);
+      if (!offSub.hidden && (dateText || location)) {
+        this.applyZDepth(ctx, offSub.z);
+        ctx.textAlign = 'left';
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'subtitle', textMuted);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'subtitle', '500', 13);
+        ctx.fillText(`${dateText}${location ? '   |   ' + location : ''}`, x + padX + offSub.x, y + 90 + offSub.y);
+      }
 
-      ctx.textAlign = 'right';
-      ctx.fillStyle = elAccent;
-      ctx.font = this.getSubPartFont(config, 'header', 'runner', 'bold', 13);
-      ctx.fillText(`ATHLETE: ${runnerName.toUpperCase()}`, x + width - padX + offRunner.x, y + 90 + offRunner.y);
+      const athletePrefix = this.getTextOverride(config, widgetKey, 'athletePrefix', 'ATHLETE:');
+      const offAthletePrefix = this.getElementOffset(config, widgetKey, 'athletePrefix');
+      if (!offRunner.hidden && (runnerName || athletePrefix)) {
+        this.applyZDepth(ctx, offRunner.z);
+        ctx.textAlign = 'right';
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'runner', elAccent);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'runner', 'bold', 13);
+        const prefixStr = (!offAthletePrefix.hidden && athletePrefix) ? `${athletePrefix} ` : '';
+        ctx.fillText(`${prefixStr}${runnerName.toUpperCase()}`, x + width - padX + offRunner.x, y + 90 + offRunner.y);
+      }
 
       ctx.restore();
-      this.recordBounds('header', 'Header', x, y, width, h);
+      this.recordBounds(widgetKey, 'Header', x, y, width, h);
       return y + h;
     }
 
     // TEMPLATE: RETRO CYBER HUD
     if (design === 'retro-cyber' || design === 'cyber-hud') {
       const h = customH || 96;
-      this.drawWidgetCardBg(ctx, 'header', x, y, width, h, config, theme);
+      this.drawWidgetCardBg(ctx, widgetKey, x, y, width, h, config, theme);
 
       // Corner Tech Crosshairs '+'
       ctx.fillStyle = elAccent;
@@ -1110,161 +1656,211 @@ export class OverlayRenderer {
       ctx.fillText('+', x + width - 8, y + h - 8);
 
       // System Tag
-      this.applyZDepth(ctx, offRunner.z);
-      ctx.textAlign = 'left';
-      ctx.fillStyle = elAccent;
-      ctx.font = this.getSubPartFont(config, 'header', 'runner', 'bold', 11);
-      ctx.fillText(`[ SYS.RUN // ${runnerName.toUpperCase()} ]`, x + 24 + offRunner.x, y + 26 + offRunner.y);
+      const sysPrompt = this.getTextOverride(config, widgetKey, 'sysPrompt', '[ SYS.RUN ]');
+      const offSys = this.getElementOffset(config, widgetKey, 'sysPrompt');
+      if (!offRunner.hidden || !offSys.hidden) {
+        this.applyZDepth(ctx, offRunner.z);
+        ctx.textAlign = 'left';
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'runner', elAccent);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'runner', 'bold', 11);
+        const pStr = (!offSys.hidden && sysPrompt) ? `${sysPrompt} ` : '';
+        const rStr = (!offRunner.hidden && runnerName) ? `// ${runnerName.toUpperCase()}` : '';
+        ctx.fillText(`${pStr}${rStr}`.trim(), x + 24 + offRunner.x, y + 26 + offRunner.y);
+      }
 
       // Main Title
-      this.applyZDepth(ctx, offTitle.z);
-      ctx.fillStyle = text;
-      ctx.font = this.getSubPartFont(config, 'header', 'title', 'bold', 28);
-      ctx.fillText(title.toUpperCase(), x + 24 + offTitle.x, y + 58 + offTitle.y);
+      if (!offTitle.hidden && title) {
+        this.applyZDepth(ctx, offTitle.z);
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'title', text);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'title', 'bold', 28);
+        ctx.fillText(title.toUpperCase(), x + 24 + offTitle.x, y + 58 + offTitle.y);
+      }
 
-      this.applyZDepth(ctx, offSub.z);
-      ctx.fillStyle = textMuted;
-      ctx.font = this.getSubPartFont(config, 'header', 'subtitle', '500', 11);
-      ctx.fillText(`${dateText}${location ? ' // ' + location.toUpperCase() : ''}`, x + 24 + offSub.x, y + 80 + offSub.y);
+      if (!offSub.hidden && (dateText || location)) {
+        this.applyZDepth(ctx, offSub.z);
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'subtitle', textMuted);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'subtitle', '500', 11);
+        ctx.fillText(`${dateText}${location ? ' // ' + location.toUpperCase() : ''}`, x + 24 + offSub.x, y + 80 + offSub.y);
+      }
 
       // Right Status Pill
-      this.applyZDepth(ctx, offWeather.z);
-      ctx.textAlign = 'right';
-      ctx.fillStyle = elAccent;
-      ctx.font = this.getSubPartFont(config, 'header', 'weather', 'bold', 12);
-      ctx.fillText('● ONLINE [OK]', x + width - 24 + offWeather.x, y + 26 + offWeather.y);
-      if (weatherText) {
-        ctx.fillStyle = textMuted;
+      const onlineStatus = this.getTextOverride(config, widgetKey, 'onlineStatus', '● ONLINE [OK]');
+      const offOnline = this.getElementOffset(config, widgetKey, 'onlineStatus');
+      if (!offOnline.hidden && onlineStatus) {
+        this.applyZDepth(ctx, offWeather.z);
+        ctx.textAlign = 'right';
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'onlineStatus', elAccent);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'onlineStatus', 'bold', 12);
+        ctx.fillText(onlineStatus, x + width - 24 + offWeather.x, y + 26 + offWeather.y);
+      }
+      if (!offWeather.hidden && weatherText) {
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'weather', textMuted);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'weather', '500', 12);
         ctx.fillText(weatherText, x + width - 24 + offWeather.x, y + 58 + offWeather.y);
       }
 
       ctx.restore();
-      this.recordBounds('header', 'Header', x, y, width, h);
+      this.recordBounds(widgetKey, 'Header', x, y, width, h);
       return y + h;
     }
 
     // TEMPLATE: MINIMALIST PASSPORT STAMP
     if (design === 'minimalist-stamp') {
       const h = customH || 92;
-      this.drawWidgetCardBg(ctx, 'header', x, y, width, h, config, theme);
+      this.drawWidgetCardBg(ctx, widgetKey, x, y, width, h, config, theme);
 
-      this.applyZDepth(ctx, offRunner.z);
-      ctx.textAlign = 'left';
-      ctx.fillStyle = elAccent;
-      ctx.font = this.getSubPartFont(config, 'header', 'runner', 'bold', 11);
-      ctx.letterSpacing = '3px';
-      ctx.fillText('★ OFFICIAL ATHLETIC ENTRY ★', x + 22 + offRunner.x, y + 24 + offRunner.y);
+      const stampBadge = this.getTextOverride(config, widgetKey, 'stampBadge', '★ OFFICIAL ATHLETIC ENTRY ★');
+      const offStampBadge = this.getElementOffset(config, widgetKey, 'stampBadge');
+      if (!offStampBadge.hidden && stampBadge) {
+        this.applyZDepth(ctx, offStampBadge.z || offRunner.z);
+        ctx.textAlign = 'left';
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'stampBadge', elAccent);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'stampBadge', 'bold', 11);
+        ctx.letterSpacing = '3px';
+        ctx.fillText(stampBadge, x + 22 + offStampBadge.x, y + 24 + offStampBadge.y);
+      }
 
-      this.applyZDepth(ctx, offTitle.z);
-      ctx.fillStyle = text;
-      ctx.font = this.getSubPartFont(config, 'header', 'title', 'bold', 30);
-      ctx.letterSpacing = '1px';
-      ctx.fillText(title.toUpperCase(), x + 22 + offTitle.x, y + 58 + offTitle.y);
+      if (!offTitle.hidden && title) {
+        this.applyZDepth(ctx, offTitle.z);
+        ctx.textAlign = 'left';
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'title', text);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'title', 'bold', 30);
+        ctx.letterSpacing = '1px';
+        ctx.fillText(title.toUpperCase(), x + 22 + offTitle.x, y + 58 + offTitle.y);
+      }
 
-      this.applyZDepth(ctx, offSub.z);
-      ctx.fillStyle = textMuted;
-      ctx.font = this.getSubPartFont(config, 'header', 'subtitle', '600', 12);
-      const metaParts = [dateText, location].filter(Boolean);
-      ctx.fillText(metaParts.join('  |  '), x + 22 + offSub.x, y + 78 + offSub.y);
+      if (!offSub.hidden && (dateText || location)) {
+        this.applyZDepth(ctx, offSub.z);
+        ctx.textAlign = 'left';
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'subtitle', textMuted);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'subtitle', '600', 12);
+        const metaParts = [dateText, location].filter(Boolean);
+        ctx.fillText(metaParts.join('  |  '), x + 22 + offSub.x, y + 78 + offSub.y);
+      }
 
       // Circular Seal Badge on Right
-      const sealR = 26;
-      const sealX = x + width - sealR - 22;
-      const sealY = y + h / 2;
-      ctx.strokeStyle = elAccent;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(sealX, sealY, sealR, 0, Math.PI * 2);
-      ctx.stroke();
+      const sealTop = this.getTextOverride(config, widgetKey, 'sealTop', 'RUN');
+      const sealBottom = this.getTextOverride(config, widgetKey, 'sealBottom', 'STAMP');
+      const offSeal = this.getElementOffset(config, widgetKey, 'seal');
+      if (!offSeal.hidden && (sealTop || sealBottom)) {
+        const sealR = 26;
+        const sealX = x + width - sealR - 22;
+        const sealY = y + h / 2;
+        ctx.strokeStyle = elAccent;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(sealX, sealY, sealR, 0, Math.PI * 2);
+        ctx.stroke();
 
-      ctx.textAlign = 'center';
-      ctx.fillStyle = elAccent;
-      ctx.font = 'bold 10px sans-serif';
-      ctx.fillText('RUN', sealX, sealY - 4);
-      ctx.fillText('STAMP', sealX, sealY + 10);
+        ctx.textAlign = 'center';
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'seal', elAccent);
+        ctx.font = 'bold 10px sans-serif';
+        if (sealTop) ctx.fillText(sealTop, sealX, sealY - 4);
+        if (sealBottom) ctx.fillText(sealBottom, sealX, sealY + 10);
+      }
 
       ctx.restore();
-      this.recordBounds('header', 'Header', x, y, width, h);
+      this.recordBounds(widgetKey, 'Header', x, y, width, h);
       return y + h;
     }
 
     // TEMPLATE: BADGE SHIELD / ATHLETIC BADGE
     if (design === 'badge-shield' || design === 'athletic-badge') {
       const h = customH || 96;
-      this.drawWidgetCardBg(ctx, 'header', x, y, width, h, config, theme, true);
+      this.drawWidgetCardBg(ctx, widgetKey, x, y, width, h, config, theme, true);
 
       // Shield Icon
-      ctx.fillStyle = elAccent;
-      this.drawRoundedRect(ctx, x + 18, y + 18, 56, 56, 12);
-      ctx.fill();
-      ctx.fillStyle = '#000';
-      ctx.font = `bold 24px ${font}`;
-      ctx.textAlign = 'center';
-      ctx.fillText('🏆', x + 46, y + 54);
-
-      this.applyZDepth(ctx, offRunner.z);
-      ctx.textAlign = 'left';
-      ctx.fillStyle = elAccent;
-      ctx.font = this.getSubPartFont(config, 'header', 'runner', 'bold', 12);
-      ctx.fillText(`★ ★ ★  ${runnerName.toUpperCase()}  ★ ★ ★`, x + 88 + offRunner.x, y + 34 + offRunner.y);
-
-      this.applyZDepth(ctx, offTitle.z);
-      ctx.fillStyle = text;
-      ctx.font = this.getSubPartFont(config, 'header', 'title', 'bold', 28);
-      ctx.fillText(title, x + 88 + offTitle.x, y + 66 + offTitle.y);
-
-      this.applyZDepth(ctx, offSub.z);
-      ctx.textAlign = 'right';
-      ctx.fillStyle = textMuted;
-      ctx.font = this.getSubPartFont(config, 'header', 'subtitle', '500', 13);
-      ctx.fillText(dateText, x + width - 22 + offSub.x, y + 44 + offSub.y);
-      if (location) {
-        this.applyZDepth(ctx, offLoc.z);
+      const shieldIcon = this.getTextOverride(config, widgetKey, 'shieldIcon', '🏆');
+      const offShield = this.getElementOffset(config, widgetKey, 'shieldIcon');
+      if (!offShield.hidden && shieldIcon) {
         ctx.fillStyle = elAccent;
-        ctx.font = this.getSubPartFont(config, 'header', 'location', 'bold', 12);
+        this.drawRoundedRect(ctx, x + 18, y + 18, 56, 56, 12);
+        ctx.fill();
+        ctx.fillStyle = '#000';
+        ctx.font = `bold 24px ${font}`;
+        ctx.textAlign = 'center';
+        ctx.fillText(shieldIcon, x + 46, y + 54);
+      }
+
+      if (!offRunner.hidden && runnerName) {
+        this.applyZDepth(ctx, offRunner.z);
+        ctx.textAlign = 'left';
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'runner', elAccent);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'runner', 'bold', 12);
+        ctx.fillText(`★ ★ ★  ${runnerName.toUpperCase()}  ★ ★ ★`, x + 88 + offRunner.x, y + 34 + offRunner.y);
+      }
+
+      if (!offTitle.hidden && title) {
+        this.applyZDepth(ctx, offTitle.z);
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'title', text);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'title', 'bold', 28);
+        ctx.fillText(title, x + 88 + offTitle.x, y + 66 + offTitle.y);
+      }
+
+      if (!offSub.hidden && dateText) {
+        this.applyZDepth(ctx, offSub.z);
+        ctx.textAlign = 'right';
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'subtitle', textMuted);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'subtitle', '500', 13);
+        ctx.fillText(dateText, x + width - 22 + offSub.x, y + 44 + offSub.y);
+      }
+      if (location && !offLoc.hidden) {
+        this.applyZDepth(ctx, offLoc.z);
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'location', elAccent);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'location', 'bold', 12);
         ctx.fillText(location, x + width - 22 + offLoc.x, y + 66 + offLoc.y);
       }
 
       ctx.restore();
-      this.recordBounds('header', 'Header', x, y, width, h);
+      this.recordBounds(widgetKey, 'Header', x, y, width, h);
       return y + h;
     }
 
     // TEMPLATE: GLASS PILL
     if (design === 'pill') {
       const h = customH || 86;
-      this.drawWidgetCardBg(ctx, 'header', x, y, width, h, config, theme, true);
+      this.drawWidgetCardBg(ctx, widgetKey, x, y, width, h, config, theme, true);
       // Athlete Avatar Icon
-      ctx.fillStyle = elAccent;
-      ctx.beginPath();
-      ctx.arc(x + 40, y + 43, 22, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#000';
-      ctx.font = `bold 16px ${font}`;
-      ctx.textAlign = 'center';
-      ctx.fillText('🏃', x + 40, y + 49);
+      const pillIcon = this.getTextOverride(config, widgetKey, 'pillIcon', '🏃');
+      const offPillIcon = this.getElementOffset(config, widgetKey, 'pillIcon');
+      if (!offPillIcon.hidden && pillIcon) {
+        ctx.fillStyle = elAccent;
+        ctx.beginPath();
+        ctx.arc(x + 40, y + 43, 22, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#000';
+        ctx.font = `bold 16px ${font}`;
+        ctx.textAlign = 'center';
+        ctx.fillText(pillIcon, x + 40, y + 49);
+      }
 
       // Title & Date
-      this.applyZDepth(ctx, offTitle.z);
-      ctx.textAlign = 'left';
-      ctx.fillStyle = text;
-      ctx.font = this.getSubPartFont(config, 'header', 'title', 'bold', 22);
-      ctx.fillText(title, x + 76 + offTitle.x, y + 38 + offTitle.y);
+      if (!offTitle.hidden && title) {
+        this.applyZDepth(ctx, offTitle.z);
+        ctx.textAlign = 'left';
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'title', text);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'title', 'bold', 22);
+        ctx.fillText(title, x + 76 + offTitle.x, y + 38 + offTitle.y);
+      }
 
-      this.applyZDepth(ctx, offSub.z);
-      ctx.fillStyle = textMuted;
-      ctx.font = this.getSubPartFont(config, 'header', 'subtitle', '500', 13);
-      ctx.fillText(`${dateText}${location ? ' • ' + location : ''}`, x + 76 + offSub.x, y + 62 + offSub.y);
+      if (!offSub.hidden && (dateText || location)) {
+        this.applyZDepth(ctx, offSub.z);
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'subtitle', textMuted);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'subtitle', '500', 13);
+        ctx.fillText(`${dateText}${location ? ' • ' + location : ''}`, x + 76 + offSub.x, y + 62 + offSub.y);
+      }
 
       // Right: Runner handle
-      this.applyZDepth(ctx, offRunner.z);
-      ctx.textAlign = 'right';
-      ctx.fillStyle = elAccent;
-      ctx.font = this.getSubPartFont(config, 'header', 'runner', 'bold', 14);
-      ctx.fillText(runnerName, x + width - 22 + offRunner.x, y + 46 + offRunner.y);
+      if (!offRunner.hidden && runnerName) {
+        this.applyZDepth(ctx, offRunner.z);
+        ctx.textAlign = 'right';
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'runner', elAccent);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'runner', 'bold', 14);
+        ctx.fillText(runnerName, x + width - 22 + offRunner.x, y + 46 + offRunner.y);
+      }
 
       ctx.restore();
-      this.recordBounds('header', 'Header', x, y, width, h);
+      this.recordBounds(widgetKey, 'Header', x, y, width, h);
       return y + h;
     }
 
@@ -1272,18 +1868,18 @@ export class OverlayRenderer {
     if (design === 'editorial' || design === 'stacked-editorial') {
       const h = customH || 96;
       const padX = (cardStyle !== 'floating') ? 22 : 10;
-      this.drawWidgetCardBg(ctx, 'header', x, y, width, h, config, theme);
+      this.drawWidgetCardBg(ctx, widgetKey, x, y, width, h, config, theme);
 
       this.applyZDepth(ctx, offSub.z);
       ctx.textAlign = 'left';
       ctx.fillStyle = elAccent;
-      ctx.font = this.getSubPartFont(config, 'header', 'subtitle', 'bold', 11);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'subtitle', 'bold', 11);
       ctx.letterSpacing = '2px';
       ctx.fillText(`// ${dateText.toUpperCase()} //`, x + padX + offSub.x, y + 20 + offSub.y);
 
       this.applyZDepth(ctx, offTitle.z);
       ctx.fillStyle = text;
-      ctx.font = this.getSubPartFont(config, 'header', 'title', 'bold', 36);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'title', 'bold', 36);
       ctx.fillText(title, x + padX + offTitle.x, y + 56 + offTitle.y);
 
       // Thin separator line
@@ -1298,18 +1894,18 @@ export class OverlayRenderer {
       if (location) {
         this.applyZDepth(ctx, offLoc.z);
         ctx.fillStyle = textMuted;
-        ctx.font = this.getSubPartFont(config, 'header', 'location', '600', 13);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'location', '600', 13);
         ctx.fillText(`📍 ${location}`, x + padX + offLoc.x, y + 86 + offLoc.y);
       }
 
       this.applyZDepth(ctx, offRunner.z);
       ctx.textAlign = 'right';
       ctx.fillStyle = text;
-      ctx.font = this.getSubPartFont(config, 'header', 'runner', 'bold', 13);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'runner', 'bold', 13);
       ctx.fillText(`${runnerName.toUpperCase()}`, x + width - padX + offRunner.x, y + 86 + offRunner.y);
 
       ctx.restore();
-      this.recordBounds('header', 'Header', x, y, width, h);
+      this.recordBounds(widgetKey, 'Header', x, y, width, h);
       return y + h;
     }
 
@@ -1317,38 +1913,48 @@ export class OverlayRenderer {
     if (design === 'athletic') {
       const h = customH || 94;
       const padX = (cardStyle !== 'floating') ? 22 : 12;
-      this.drawWidgetCardBg(ctx, 'header', x, y, width, h, config, theme);
+      this.drawWidgetCardBg(ctx, widgetKey, x, y, width, h, config, theme);
 
       // Category chip
-      ctx.fillStyle = elAccent;
-      this.drawRoundedRect(ctx, x + padX, y + 10, 80, 22, 4);
-      ctx.fill();
-      ctx.fillStyle = '#000';
-      ctx.font = `bold 11px ${font}`;
-      ctx.textAlign = 'center';
-      ctx.fillText('⚡ RUN HUD', x + padX + 40, y + 25);
+      const hudChip = this.getTextOverride(config, widgetKey, 'hudChip', '⚡ RUN HUD');
+      const offHudChip = this.getElementOffset(config, widgetKey, 'hudChip');
+      if (!offHudChip.hidden && hudChip) {
+        ctx.fillStyle = elAccent;
+        this.drawRoundedRect(ctx, x + padX, y + 10, 80, 22, 4);
+        ctx.fill();
+        ctx.fillStyle = '#000';
+        ctx.font = `bold 11px ${font}`;
+        ctx.textAlign = 'center';
+        ctx.fillText(hudChip, x + padX + 40, y + 25);
+      }
 
       // Title
-      this.applyZDepth(ctx, offTitle.z);
-      ctx.textAlign = 'left';
-      ctx.fillStyle = text;
-      ctx.font = this.getSubPartFont(config, 'header', 'title', 'bold', 28);
-      ctx.fillText(title.toUpperCase(), x + padX + offTitle.x, y + 58 + offTitle.y);
+      if (!offTitle.hidden && title) {
+        this.applyZDepth(ctx, offTitle.z);
+        ctx.textAlign = 'left';
+        ctx.fillStyle = text;
+        ctx.font = this.getSubPartFont(config, widgetKey, 'title', 'bold', 28);
+        ctx.fillText(title.toUpperCase(), x + padX + offTitle.x, y + 58 + offTitle.y);
+      }
 
-      this.applyZDepth(ctx, offSub.z);
-      ctx.fillStyle = textMuted;
-      ctx.font = this.getSubPartFont(config, 'header', 'subtitle', '600', 13);
-      ctx.fillText(`${dateText}${location ? '  |  ' + location : ''}`, x + padX + offSub.x, y + 80 + offSub.y);
+      if (!offSub.hidden && (dateText || location)) {
+        this.applyZDepth(ctx, offSub.z);
+        ctx.fillStyle = textMuted;
+        ctx.font = this.getSubPartFont(config, widgetKey, 'subtitle', '600', 13);
+        ctx.fillText(`${dateText}${location ? '  |  ' + location : ''}`, x + padX + offSub.x, y + 80 + offSub.y);
+      }
 
       // Right: Runner
-      this.applyZDepth(ctx, offRunner.z);
-      ctx.textAlign = 'right';
-      ctx.fillStyle = elAccent;
-      ctx.font = this.getSubPartFont(config, 'header', 'runner', 'bold', 15);
-      ctx.fillText(runnerName.toUpperCase(), x + width - padX + offRunner.x, y + 58 + offRunner.y);
+      if (!offRunner.hidden && runnerName) {
+        this.applyZDepth(ctx, offRunner.z);
+        ctx.textAlign = 'right';
+        ctx.fillStyle = elAccent;
+        ctx.font = this.getSubPartFont(config, widgetKey, 'runner', 'bold', 15);
+        ctx.fillText(runnerName.toUpperCase(), x + width - padX + offRunner.x, y + 58 + offRunner.y);
+      }
 
       ctx.restore();
-      this.recordBounds('header', 'Header', x, y, width, h);
+      this.recordBounds(widgetKey, 'Header', x, y, width, h);
       return y + h;
     }
 
@@ -1356,7 +1962,7 @@ export class OverlayRenderer {
     if (design === 'vertical-sidebar-badge') {
       // Style: Vertical Accent Card (Stacked headline with glowing sidebar stripe)
       const h = customH || 92;
-      this.drawWidgetCardBg(ctx, 'header', x, y, width, h, config, theme);
+      this.drawWidgetCardBg(ctx, widgetKey, x, y, width, h, config, theme);
 
       // Thick left accent stripe
       ctx.fillStyle = elAccent;
@@ -1364,43 +1970,47 @@ export class OverlayRenderer {
       ctx.fill();
 
       // Title
-      this.applyZDepth(ctx, offTitle.z);
-      ctx.textAlign = 'left';
-      ctx.fillStyle = this.getSubPartColor(config, 'header', 'title', text);
-      ctx.font = this.getSubPartFont(config, 'header', 'title', 'bold', 28);
-      ctx.fillText(title, x + 24 + offTitle.x, y + 36 + offTitle.y);
+      if (!offTitle.hidden && title) {
+        this.applyZDepth(ctx, offTitle.z);
+        ctx.textAlign = 'left';
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'title', text);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'title', 'bold', 28);
+        ctx.fillText(title, x + 24 + offTitle.x, y + 36 + offTitle.y);
+      }
 
       // Subtitle
-      this.applyZDepth(ctx, offSub.z);
-      ctx.fillStyle = this.getSubPartColor(config, 'header', 'subtitle', textMuted);
-      ctx.font = this.getSubPartFont(config, 'header', 'subtitle', '500', 13);
-      ctx.fillText(dateText, x + 24 + offSub.x, y + 62 + offSub.y);
+      if (!offSub.hidden && dateText) {
+        this.applyZDepth(ctx, offSub.z);
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'subtitle', textMuted);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'subtitle', '500', 13);
+        ctx.fillText(dateText, x + 24 + offSub.x, y + 62 + offSub.y);
+      }
 
       // Right-aligned Runner & Location
       const rightX = x + width - 20;
       ctx.textAlign = 'right';
-      if (runnerName) {
+      if (!offRunner.hidden && runnerName) {
         this.applyZDepth(ctx, offRunner.z);
-        ctx.fillStyle = this.getSubPartColor(config, 'header', 'runner', elAccent);
-        ctx.font = this.getSubPartFont(config, 'header', 'runner', 'bold', 14);
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'runner', elAccent);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'runner', 'bold', 14);
         ctx.fillText(runnerName, rightX + offRunner.x, y + 36 + offRunner.y);
       }
-      if (location) {
+      if (location && !offLoc.hidden) {
         this.applyZDepth(ctx, offLoc.z);
-        ctx.fillStyle = this.getSubPartColor(config, 'header', 'location', textMuted);
-        ctx.font = this.getSubPartFont(config, 'header', 'location', '500', 12);
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'location', textMuted);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'location', '500', 12);
         ctx.fillText(`📍 ${location}`, rightX + offLoc.x, y + 60 + offLoc.y);
       }
 
       ctx.restore();
-      this.recordBounds('header', 'Header', x, y, width, h);
+      this.recordBounds(widgetKey, 'Header', x, y, width, h);
       return y + h;
     }
 
     if (design === 'running-bib-header') {
       // Style: Marathon Race Bib Header (Bib number, athlete tag & perforated seal)
       const h = customH || 96;
-      this.drawWidgetCardBg(ctx, 'header', x, y, width, h, config, theme);
+      this.drawWidgetCardBg(ctx, widgetKey, x, y, width, h, config, theme);
 
       // Top bib color bar
       ctx.fillStyle = elAccent;
@@ -1408,26 +2018,36 @@ export class OverlayRenderer {
       ctx.fill();
 
       // Runner name & bib number
-      this.applyZDepth(ctx, offRunner.z);
-      ctx.textAlign = 'left';
-      ctx.fillStyle = this.getSubPartColor(config, 'header', 'runner', elAccent);
-      ctx.font = 'bold 11px monospace';
-      ctx.fillText(`BIB #4219 // ATHLETE: ${runnerName.toUpperCase()}`, x + 18 + offRunner.x, y + 32 + offRunner.y);
+      const bibPrefix = this.getTextOverride(config, widgetKey, 'bibPrefix', 'BIB #4219 // ATHLETE:');
+      const offBibPrefix = this.getElementOffset(config, widgetKey, 'bibPrefix');
+      if (!offRunner.hidden || !offBibPrefix.hidden) {
+        this.applyZDepth(ctx, offRunner.z);
+        ctx.textAlign = 'left';
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'runner', elAccent);
+        ctx.font = 'bold 11px monospace';
+        const p = (!offBibPrefix.hidden && bibPrefix) ? `${bibPrefix} ` : '';
+        const r = (!offRunner.hidden && runnerName) ? runnerName.toUpperCase() : '';
+        ctx.fillText(`${p}${r}`.trim(), x + 18 + offRunner.x, y + 32 + offRunner.y);
+      }
 
       // Main title
-      this.applyZDepth(ctx, offTitle.z);
-      ctx.fillStyle = this.getSubPartColor(config, 'header', 'title', text);
-      ctx.font = this.getSubPartFont(config, 'header', 'title', 'bold', 28);
-      ctx.fillText(title.toUpperCase(), x + 18 + offTitle.x, y + 64 + offTitle.y);
+      if (!offTitle.hidden && title) {
+        this.applyZDepth(ctx, offTitle.z);
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'title', text);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'title', 'bold', 28);
+        ctx.fillText(title.toUpperCase(), x + 18 + offTitle.x, y + 64 + offTitle.y);
+      }
 
       // Date & location on right
       ctx.textAlign = 'right';
       const rightX = x + width - 18;
-      this.applyZDepth(ctx, offSub.z);
-      ctx.fillStyle = this.getSubPartColor(config, 'header', 'subtitle', textMuted);
-      ctx.font = this.getSubPartFont(config, 'header', 'subtitle', 'bold', 11);
-      ctx.fillText(dateText, rightX + offSub.x, y + 60 + offSub.y);
-      if (location) {
+      if (!offSub.hidden && dateText) {
+        this.applyZDepth(ctx, offSub.z);
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'subtitle', textMuted);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'subtitle', 'bold', 11);
+        ctx.fillText(dateText, rightX + offSub.x, y + 60 + offSub.y);
+      }
+      if (location && !offLoc.hidden) {
         this.applyZDepth(ctx, offLoc.z);
         ctx.fillText(location.toUpperCase(), rightX + offLoc.x, y + 78 + offLoc.y);
       }
@@ -1443,111 +2063,131 @@ export class OverlayRenderer {
       ctx.setLineDash([]);
 
       ctx.restore();
-      this.recordBounds('header', 'Header', x, y, width, h);
+      this.recordBounds(widgetKey, 'Header', x, y, width, h);
       return y + h;
     }
 
     if (design === 'broadcast-lowerthird') {
       // Style: Broadcast Banner (Lower-third TV ribbon with live dot)
       const h = customH || 82;
-      this.drawWidgetCardBg(ctx, 'header', x, y, width, h, config, theme);
+      this.drawWidgetCardBg(ctx, widgetKey, x, y, width, h, config, theme);
 
       // Glowing LIVE indicator pill
-      const liveW = 70;
-      this.drawRoundedRect(ctx, x + 16, y + 14, liveW, 20, 10);
-      ctx.fillStyle = 'rgba(239, 68, 68, 0.2)';
-      ctx.fill();
-      ctx.strokeStyle = '#ef4444';
-      ctx.lineWidth = 1;
-      ctx.stroke();
+      const finishBadge = this.getTextOverride(config, widgetKey, 'finishBadge', 'FINISH');
+      const offFinish = this.getElementOffset(config, widgetKey, 'finishBadge');
+      if (!offFinish.hidden && finishBadge) {
+        const liveW = 70;
+        this.drawRoundedRect(ctx, x + 16, y + 14, liveW, 20, 10);
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.2)';
+        ctx.fill();
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 1;
+        ctx.stroke();
 
-      ctx.beginPath();
-      ctx.arc(x + 28, y + 24, 4, 0, Math.PI * 2);
-      ctx.fillStyle = '#ef4444';
-      ctx.fill();
+        ctx.beginPath();
+        ctx.arc(x + 28, y + 24, 4, 0, Math.PI * 2);
+        ctx.fillStyle = '#ef4444';
+        ctx.fill();
 
-      ctx.textAlign = 'left';
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 9px sans-serif';
-      ctx.fillText('FINISH', x + 38, y + 27);
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 9px sans-serif';
+        ctx.fillText(finishBadge, x + 38, y + 27);
+      }
 
       // Title
-      this.applyZDepth(ctx, offTitle.z);
-      ctx.fillStyle = this.getSubPartColor(config, 'header', 'title', text);
-      ctx.font = this.getSubPartFont(config, 'header', 'title', 'bold', 26);
-      ctx.fillText(title, x + 96 + offTitle.x, y + 32 + offTitle.y);
+      if (!offTitle.hidden && title) {
+        this.applyZDepth(ctx, offTitle.z);
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'title', text);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'title', 'bold', 26);
+        ctx.fillText(title, x + 96 + offTitle.x, y + 32 + offTitle.y);
+      }
 
       // Sub-bar banner
       this.drawRoundedRect(ctx, x + 16, y + 44, width - 32, 26, 6);
       ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
       ctx.fill();
 
-      this.applyZDepth(ctx, offSub.z);
-      ctx.fillStyle = this.getSubPartColor(config, 'header', 'subtitle', textMuted);
-      ctx.font = this.getSubPartFont(config, 'header', 'subtitle', '500', 11);
-      ctx.fillText(dateText, x + 26 + offSub.x, y + 61 + offSub.y);
+      if (!offSub.hidden && dateText) {
+        this.applyZDepth(ctx, offSub.z);
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'subtitle', textMuted);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'subtitle', '500', 11);
+        ctx.fillText(dateText, x + 26 + offSub.x, y + 61 + offSub.y);
+      }
 
       ctx.textAlign = 'right';
       const rightX = x + width - 26;
-      this.applyZDepth(ctx, offRunner.z);
-      ctx.fillStyle = this.getSubPartColor(config, 'header', 'runner', elAccent);
-      ctx.font = this.getSubPartFont(config, 'header', 'runner', 'bold', 11);
-      ctx.fillText(`${runnerName}  ${location ? '• ' + location : ''}`, rightX + offRunner.x, y + 61 + offRunner.y);
+      if (!offRunner.hidden && (runnerName || location)) {
+        this.applyZDepth(ctx, offRunner.z);
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'runner', elAccent);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'runner', 'bold', 11);
+        ctx.fillText(`${runnerName}  ${location ? '• ' + location : ''}`, rightX + offRunner.x, y + 61 + offRunner.y);
+      }
 
       ctx.restore();
-      this.recordBounds('header', 'Header', x, y, width, h);
+      this.recordBounds(widgetKey, 'Header', x, y, width, h);
       return y + h;
     }
 
     if (design === 'architect-monolith') {
       // Style: Architectural Monolith (Oversized date & clean typography)
       const h = customH || 92;
-      this.drawWidgetCardBg(ctx, 'header', x, y, width, h, config, theme);
+      this.drawWidgetCardBg(ctx, widgetKey, x, y, width, h, config, theme);
 
       // Extract day number & month if possible
-      const dayNum = activity.dateFormatted ? (activity.dateFormatted.match(/\d+/) || ['15'])[0] : '15';
-      const monthStr = activity.dateFormatted ? (activity.dateFormatted.match(/[A-Za-z]+/) || ['OCT'])[0].toUpperCase() : 'OCT';
+      const defaultDayNum = activity.dateFormatted ? (activity.dateFormatted.match(/\d+/) || ['15'])[0] : '15';
+      const defaultMonthStr = activity.dateFormatted ? (activity.dateFormatted.match(/[A-Za-z]+/) || ['OCT'])[0].toUpperCase() : 'OCT';
+      const dayNum = this.getTextOverride(config, widgetKey, 'dayNum', defaultDayNum);
+      const monthStr = this.getTextOverride(config, widgetKey, 'monthStr', defaultMonthStr);
+      const offDayNum = this.getElementOffset(config, widgetKey, 'dayNum');
+      const offMonthStr = this.getElementOffset(config, widgetKey, 'monthStr');
 
       // Big calendar block
       const dateBoxW = 56;
-      this.drawRoundedRect(ctx, x + 16, y + 14, dateBoxW, h - 28, 6);
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
-      ctx.fill();
-      ctx.strokeStyle = elAccent;
-      ctx.lineWidth = 1.2;
-      ctx.stroke();
+      if (!offDayNum.hidden || !offMonthStr.hidden) {
+        this.drawRoundedRect(ctx, x + 16, y + 14, dateBoxW, h - 28, 6);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+        ctx.fill();
+        ctx.strokeStyle = elAccent;
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
 
-      ctx.textAlign = 'center';
-      ctx.fillStyle = elAccent;
-      ctx.font = 'bold 22px sans-serif';
-      ctx.fillText(dayNum, x + 16 + dateBoxW / 2, y + 42);
-      ctx.fillStyle = textMuted;
-      ctx.font = 'bold 9px sans-serif';
-      ctx.fillText(monthStr, x + 16 + dateBoxW / 2, y + 58);
+        ctx.textAlign = 'center';
+        if (!offDayNum.hidden && dayNum) {
+          ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'dayNum', elAccent);
+          ctx.font = 'bold 22px sans-serif';
+          ctx.fillText(dayNum, x + 16 + dateBoxW / 2 + offDayNum.x, y + 42 + offDayNum.y);
+        }
+        if (!offMonthStr.hidden && monthStr) {
+          ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'monthStr', textMuted);
+          ctx.font = 'bold 9px sans-serif';
+          ctx.fillText(monthStr, x + 16 + dateBoxW / 2 + offMonthStr.x, y + 58 + offMonthStr.y);
+        }
+      }
 
       // Main title
       this.applyZDepth(ctx, offTitle.z);
       ctx.textAlign = 'left';
-      ctx.fillStyle = this.getSubPartColor(config, 'header', 'title', text);
-      ctx.font = this.getSubPartFont(config, 'header', 'title', 'bold', 30);
+      ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'title', text);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'title', 'bold', 30);
       ctx.fillText(title.toUpperCase(), x + 86 + offTitle.x, y + 42 + offTitle.y);
 
       // Subtitle & Runner
       this.applyZDepth(ctx, offSub.z);
-      ctx.fillStyle = this.getSubPartColor(config, 'header', 'subtitle', textMuted);
-      ctx.font = this.getSubPartFont(config, 'header', 'subtitle', '500', 12);
+      ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'subtitle', textMuted);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'subtitle', '500', 12);
       ctx.fillText(`${activity.timeFormatted || '06:30 AM'} // ${runnerName}`, x + 86 + offSub.x, y + 66 + offSub.y);
 
       if (location) {
         ctx.textAlign = 'right';
         this.applyZDepth(ctx, offLoc.z);
         ctx.fillStyle = elAccent;
-        ctx.font = this.getSubPartFont(config, 'header', 'location', 'bold', 12);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'location', 'bold', 12);
         ctx.fillText(`📍 ${location}`, x + width - 20 + offLoc.x, y + 42 + offLoc.y);
       }
 
       ctx.restore();
-      this.recordBounds('header', 'Header', x, y, width, h);
+      this.recordBounds(widgetKey, 'Header', x, y, width, h);
       return y + h;
     }
 
@@ -1556,7 +2196,7 @@ export class OverlayRenderer {
     const padY = (cardStyle !== 'floating') ? 14 : 8;
     const h = customH || (config.weatherText ? 96 : 84);
     if (cardStyle !== 'floating') {
-      this.drawWidgetCardBg(ctx, 'header', x, y, width, h, config, theme);
+      this.drawWidgetCardBg(ctx, widgetKey, x, y, width, h, config, theme);
     }
     const alignMode = align || 'left';
     ctx.textAlign = alignMode;
@@ -1566,39 +2206,52 @@ export class OverlayRenderer {
 
     this.applyZDepth(ctx, offTitle.z);
     ctx.fillStyle = text;
-    ctx.font = this.getSubPartFont(config, 'header', 'title', 'bold', 32);
+    ctx.font = this.getSubPartFont(config, widgetKey, 'title', 'bold', 32);
     ctx.fillText(title, titleX, y + padY + 30 + offTitle.y);
 
     this.applyZDepth(ctx, offSub.z);
-    ctx.font = this.getSubPartFont(config, 'header', 'subtitle', '500', 14);
+    ctx.font = this.getSubPartFont(config, widgetKey, 'subtitle', '500', 14);
     ctx.fillStyle = textMuted;
     ctx.fillText(dateText, subX, y + padY + 54 + offSub.y);
 
-    if (alignMode === 'left') {
-      ctx.textAlign = 'right';
-      const rightX = x + width - padX;
+    if (alignMode === 'center') {
+      ctx.textAlign = 'center';
+      const metaParts = [runnerName, location, weatherText || config.weatherText].filter(Boolean);
+      if (metaParts.length > 0) {
+        ctx.save();
+        this.applyZDepth(ctx, offRunner.z);
+        ctx.fillStyle = elAccent;
+        ctx.font = this.getSubPartFont(config, widgetKey, 'runner', 'bold', 12);
+        ctx.fillText(metaParts.join('  •  '), x + width / 2, y + padY + 74 + offRunner.y);
+        ctx.restore();
+      }
+    } else {
+      const isLeft = alignMode === 'left';
+      ctx.textAlign = isLeft ? 'right' : 'left';
+      const metaX = isLeft ? x + width - padX : x + padX;
+
       if (location) {
         this.applyZDepth(ctx, offLoc.z);
         ctx.fillStyle = elAccent;
-        ctx.font = this.getSubPartFont(config, 'header', 'location', 'bold', 12);
-        ctx.fillText(location.toUpperCase(), rightX + offLoc.x, y + padY + 20 + offLoc.y);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'location', 'bold', 12);
+        ctx.fillText(location.toUpperCase(), metaX + offLoc.x, y + padY + 20 + offLoc.y);
       }
 
       this.applyZDepth(ctx, offRunner.z);
       ctx.fillStyle = text;
-      ctx.font = this.getSubPartFont(config, 'header', 'runner', '600', 15);
-      ctx.fillText(runnerName, rightX + offRunner.x, y + padY + (location ? 42 : 28) + offRunner.y);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'runner', '600', 15);
+      ctx.fillText(runnerName, metaX + offRunner.x, y + padY + (location ? 42 : 28) + offRunner.y);
 
-      if (config.weatherText) {
+      if (weatherText || config.weatherText) {
         this.applyZDepth(ctx, offWeather.z);
         ctx.fillStyle = textMuted;
-        ctx.font = this.getSubPartFont(config, 'header', 'weather', '500', 12);
-        ctx.fillText(config.weatherText, rightX + offWeather.x, y + padY + (location ? 64 : 50) + offWeather.y);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'weather', '500', 12);
+        ctx.fillText(weatherText || config.weatherText, metaX + offWeather.x, y + padY + (location ? 64 : 50) + offWeather.y);
       }
     }
 
     ctx.restore();
-    this.recordBounds('header', 'Header', x, y, width, h);
+    this.recordBounds(widgetKey, 'Header', x, y, width, h);
     return y + h;
   }
 
@@ -1606,19 +2259,19 @@ export class OverlayRenderer {
   // WIDGET 2: ROUTE MAP
   // Designs: 'glow', 'card', 'milestones', 'minimal', 'neon-pulse', 'framed-polaroid', 'gradient-speed'
   // =========================================================================
-  drawRouteMap(ctx, x, y, width, height, activity, config, theme, accent) {
+  drawRouteMap(ctx, x, y, width, height, activity, config, theme, accent, widgetKey = 'map') {
     if (!activity.hasRoute || !activity.bounds || activity.bounds.minLat === 90) return;
 
     ctx.save();
-    const { accent: mapAccent, opacity: mapOpacity, cardStyle } = this.getEffectiveColors(config, theme, accent, 'map');
+    const { accent: mapAccent, opacity: mapOpacity, cardStyle } = this.getEffectiveColors(config, theme, accent, widgetKey);
     if (mapOpacity < 1) ctx.globalAlpha = mapOpacity;
     accent = mapAccent;
 
     const design = config.mapDesign || 'glow';
-    this.recordBounds('map', 'Route Map', x, y, width, height);
+    this.recordBounds(widgetKey, 'Route Map', x, y, width, height);
 
-    const offRoute = this.getElementOffset(config, 'map', 'route');
-    const offCaption = this.getElementOffset(config, 'map', 'caption');
+    const offRoute = this.getElementOffset(config, widgetKey, 'route');
+    const offCaption = this.getElementOffset(config, widgetKey, 'caption');
 
     // Check if bare route (no backdrop) or floating is chosen
     const isBareRoute = design === 'bare-route' || design === 'bare-glow' || design === 'bare-speed' || this.isTextOnly(config, 'map');
@@ -1628,7 +2281,7 @@ export class OverlayRenderer {
       // Zero backdrop drawn! Pure floating map
     } else if (design === 'framed-polaroid') {
       // White / bright polaroid card with bottom caption
-      this.drawWidgetCardBg(ctx, 'map', x, y, width, height, config, theme) || (() => {
+      this.drawWidgetCardBg(ctx, widgetKey, x, y, width, height, config, theme) || (() => {
         ctx.fillStyle = '#ffffff';
         this.drawRoundedRect(ctx, x, y, width, height, 12);
         ctx.fill();
@@ -1654,15 +2307,15 @@ export class OverlayRenderer {
         this.applyZDepth(ctx, offCaption.z);
         ctx.textAlign = 'center';
         ctx.fillStyle = '#1e293b';
-        ctx.font = this.getSubPartFont(config, 'map', 'caption', 'bold', 14);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'caption', 'bold', 14);
         const capDefault = `${config.locationName || activity.title || 'Run'} • ${activity.distanceMain} ${activity.distanceUnit}`;
-        const capText = this.getTextOverride(config, 'map', 'caption', capDefault);
+        const capText = this.getTextOverride(config, widgetKey, 'caption', capDefault);
         ctx.fillText(capText, x + width / 2 + offCaption.x, y + height - 16 + offCaption.y);
         ctx.restore();
       }
     } else if (design === 'cyber-wireframe') {
       // Cyber Grid & Compass HUD
-      this.drawWidgetCardBg(ctx, 'map', x, y, width, height, config, theme);
+      this.drawWidgetCardBg(ctx, widgetKey, x, y, width, height, config, theme);
       ctx.strokeStyle = 'rgba(0, 240, 255, 0.08)';
       ctx.lineWidth = 1;
       const gStep = 25;
@@ -1686,7 +2339,7 @@ export class OverlayRenderer {
 
     } else if (design === 'radar-screen') {
       // Tactical Radar Screen (Concentric circles & crosshairs)
-      this.drawWidgetCardBg(ctx, 'map', x, y, width, height, config, theme);
+      this.drawWidgetCardBg(ctx, widgetKey, x, y, width, height, config, theme);
       const rCx = x + width / 2;
       const rCy = y + height / 2;
       const maxR = Math.min(width, height) * 0.44;
@@ -1704,7 +2357,7 @@ export class OverlayRenderer {
 
     } else if (design === 'vintage-topo-map') {
       // Topographic Elevation Contours
-      this.drawWidgetCardBg(ctx, 'map', x, y, width, height, config, theme);
+      this.drawWidgetCardBg(ctx, widgetKey, x, y, width, height, config, theme);
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
       ctx.lineWidth = 1;
       const waveCount = 5;
@@ -1717,7 +2370,7 @@ export class OverlayRenderer {
       }
     } else if (design === 'neon-pulse') {
       // Tech grid backdrop
-      this.drawWidgetCardBg(ctx, 'map', x, y, width, height, config, theme);
+      this.drawWidgetCardBg(ctx, widgetKey, x, y, width, height, config, theme);
       ctx.strokeStyle = 'rgba(0, 240, 255, 0.08)';
       ctx.lineWidth = 1;
       const gridStep = 30;
@@ -1728,7 +2381,7 @@ export class OverlayRenderer {
         ctx.beginPath(); ctx.moveTo(x, gy); ctx.lineTo(x + width, gy); ctx.stroke();
       }
     } else {
-      this.drawWidgetCardBg(ctx, 'map', x, y, width, height, config, theme);
+      this.drawWidgetCardBg(ctx, widgetKey, x, y, width, height, config, theme);
     }
 
     if (offRoute.hidden) {
@@ -1930,10 +2583,10 @@ export class OverlayRenderer {
   // WIDGET 3: HERO STAT
   // Designs: 'mega', 'card', 'split-pill', 'outline', 'tape-sticker', 'digital-lcd', 'speedometer'
   // =========================================================================
-  drawHeroStat(ctx, x, y, width, activity, config, theme, accent, customH = null) {
+  drawHeroStat(ctx, x, y, width, activity, config, theme, accent, customH = null, widgetKey = 'hero') {
     ctx.save();
-    const elStyle = this.getElementStyle(config, 'hero');
-    const { text, textMuted, accent: elAccent, cardStyle, align, opacity } = this.getEffectiveColors(config, theme, accent, 'hero');
+    const elStyle = this.getElementStyle(config, widgetKey);
+    const { text, textMuted, accent: elAccent, cardStyle, align, opacity } = this.getEffectiveColors(config, theme, accent, widgetKey);
     if (opacity < 1) ctx.globalAlpha = opacity;
 
     const font = this.getFontFamily(elStyle.fontFamily !== 'default' ? elStyle.fontFamily : config.fontFamily);
@@ -1958,26 +2611,221 @@ export class OverlayRenderer {
     let label = this.getMetricLabel(config, labelKey, defaultLabel);
 
     // Apply individual text overrides for hero metric
-    label = this.getTextOverride(config, 'hero', 'label', label);
-    mainVal = this.getTextOverride(config, 'hero', 'value', mainVal);
-    mainUnit = this.getTextOverride(config, 'hero', 'unit', mainUnit);
+    label = this.getTextOverride(config, widgetKey, 'label', label);
+    mainVal = this.getTextOverride(config, widgetKey, 'value', mainVal);
+    mainUnit = this.getTextOverride(config, widgetKey, 'unit', mainUnit);
 
-    const offLabel = this.getElementOffset(config, 'hero', 'label');
-    const offVal = this.getElementOffset(config, 'hero', 'value');
-    const offUnit = this.getElementOffset(config, 'hero', 'unit');
-    const offSec = this.getElementOffset(config, 'hero', 'secondary');
+    const offLabel = this.getElementOffset(config, widgetKey, 'label');
+    const offVal = this.getElementOffset(config, widgetKey, 'value');
+    const offUnit = this.getElementOffset(config, widgetKey, 'unit');
+    const offSec = this.getElementOffset(config, widgetKey, 'secondary');
 
     if (offLabel.hidden) label = '';
     if (offVal.hidden) mainVal = '';
     if (offUnit.hidden) mainUnit = '';
 
     const h = customH || 105;
-    this.recordBounds('hero', 'Hero Metric', x, y, width, h);
+    this.recordBounds(widgetKey, 'Hero Metric', x, y, width, h);
+
+    if (design === 'centered-radial-pod') {
+      // Centered Radial Stadium Pod (Glowing Halo & Unit Badge)
+      const podH = customH || 130;
+      this.recordBounds(widgetKey, 'Hero Metric', x, y, width, podH);
+      const effAlign = this.getWidgetAlign(align, 'center');
+      const podW = Math.min(width, 280);
+      const podX = effAlign === 'left' ? x : effAlign === 'right' ? x + width - podW : x + (width - podW) / 2;
+      const cx = podX + podW / 2;
+
+      // Outer glowing radial arc
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, y + podH / 2, Math.min(podW, podH) * 0.46, -Math.PI * 0.75, Math.PI * 0.75);
+      ctx.strokeStyle = elAccent;
+      ctx.lineWidth = 3;
+      ctx.shadowColor = elAccent;
+      ctx.shadowBlur = 12;
+      ctx.stroke();
+      ctx.restore();
+
+      // Rounded pod card
+      this.drawRoundedRect(ctx, podX, y + 6, podW, podH - 12, 28);
+      ctx.fillStyle = cardStyle === 'solid' ? '#111420' : 'rgba(15, 20, 32, 0.9)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // Top label pill
+      if (!offLabel.hidden && label) {
+        ctx.save();
+        this.applyZDepth(ctx, offLabel.z);
+        const lPillW = Math.min(podW - 40, 140);
+        this.drawRoundedRect(ctx, cx - lPillW / 2 + offLabel.x, y + 14 + offLabel.y, lPillW, 20, 10);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+        ctx.fill();
+        ctx.strokeStyle = elAccent;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.textAlign = 'center';
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'label', elAccent);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'label', 'bold', 10);
+        ctx.fillText(label.toUpperCase(), cx + offLabel.x, y + 28 + offLabel.y);
+        ctx.restore();
+      }
+
+      // Massive Centered Value
+      if (!offVal.hidden && mainVal) {
+        ctx.save();
+        this.applyZDepth(ctx, offVal.z);
+        ctx.textAlign = 'center';
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'val', text);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'val', 'bold', 54);
+        ctx.shadowColor = elAccent;
+        ctx.shadowBlur = 10;
+        ctx.fillText(mainVal, cx + offVal.x, y + 78 + offVal.y);
+        ctx.restore();
+      }
+
+      // Bottom Unit Badge
+      if (!offUnit.hidden && mainUnit) {
+        ctx.save();
+        this.applyZDepth(ctx, offUnit.z);
+        ctx.textAlign = 'center';
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'unit', elAccent);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'unit', 'bold', 15);
+        ctx.letterSpacing = '2px';
+        ctx.fillText(mainUnit.toUpperCase(), cx + offUnit.x, y + 104 + offUnit.y);
+        ctx.restore();
+      }
+
+      ctx.restore();
+      return y + podH;
+    }
+
+    if (design === 'centered-stadium-capsule') {
+      // Centered Stadium Capsule (Pill Frame & Centered Stack)
+      const capH = customH || 110;
+      this.recordBounds(widgetKey, 'Hero Metric', x, y, width, capH);
+      const effAlign = this.getWidgetAlign(align, 'center');
+      const cx = this.getAlignX(effAlign, x, width, 24, 'center');
+
+      // Stadium pill frame
+      this.drawRoundedRect(ctx, x, y, width, capH, Math.min(28, capH / 2));
+      ctx.fillStyle = cardStyle === 'solid' ? '#101422' : 'rgba(14, 18, 30, 0.88)';
+      ctx.fill();
+      ctx.strokeStyle = elAccent;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Top centered beacon & label
+      if (!offLabel.hidden && label) {
+        ctx.save();
+        this.applyZDepth(ctx, offLabel.z);
+        ctx.textAlign = 'center';
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'label', elAccent);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'label', 'bold', 11);
+        ctx.letterSpacing = '1.5px';
+        ctx.fillText(`●  ${label.toUpperCase()}`, cx + offLabel.x, y + 26 + offLabel.y);
+        ctx.restore();
+      }
+
+      // Middle Centered Numerals + Unit
+      if (!offVal.hidden && mainVal) {
+        ctx.save();
+        this.applyZDepth(ctx, offVal.z);
+        ctx.textAlign = 'center';
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'val', text);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'val', 'bold', 52);
+        ctx.shadowColor = 'rgba(0,0,0,0.8)';
+        ctx.shadowBlur = 10;
+        const valStr = mainUnit ? `${mainVal} ${mainUnit}` : mainVal;
+        ctx.fillText(valStr, cx + offVal.x, y + 74 + offVal.y);
+        ctx.restore();
+      }
+
+      // Bottom centered telemetry bar
+      if (!offSec.hidden) {
+        ctx.save();
+        this.applyZDepth(ctx, offSec.z);
+        ctx.textAlign = 'center';
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'secondary', textMuted);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'secondary', 'bold', 9);
+        ctx.letterSpacing = '2px';
+        const secText = this.getTextOverride(config, widgetKey, 'secondary', '⚡ GPS RUN VERIFIED // TELEMETRY');
+        ctx.fillText(secText, cx + offSec.x, y + 96 + offSec.y);
+        ctx.restore();
+      }
+
+      ctx.restore();
+      return y + capH;
+    }
+
+    if (design === 'centered-monolith') {
+      // Centered Monolith (Ultra Bold Typography & Neon Underline)
+      const monoH = customH || 120;
+      this.recordBounds(widgetKey, 'Hero Metric', x, y, width, monoH);
+      if (cardStyle !== 'floating') {
+        this.drawWidgetCardBg(ctx, widgetKey, x, y, width, monoH, config, theme);
+      }
+      const effAlign = this.getWidgetAlign(align, 'center');
+      const cx = this.getAlignX(effAlign, x, width, 24, 'center');
+
+      // Top label
+      if (!offLabel.hidden && label) {
+        ctx.save();
+        this.applyZDepth(ctx, offLabel.z);
+        ctx.textAlign = effAlign;
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'label', elAccent);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'label', 'bold', 12);
+        ctx.letterSpacing = '3px';
+        ctx.fillText(label.toUpperCase(), cx + offLabel.x, y + 26 + offLabel.y);
+        ctx.restore();
+      }
+
+      // Giant centered value
+      if (!offVal.hidden && mainVal) {
+        ctx.save();
+        this.applyZDepth(ctx, offVal.z);
+        ctx.textAlign = effAlign;
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'val', text);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'val', 'bold', 62);
+        ctx.shadowColor = 'rgba(0,0,0,0.85)';
+        ctx.shadowBlur = 12;
+        ctx.fillText(mainVal, cx + offVal.x, y + 84 + offVal.y);
+        ctx.restore();
+      }
+
+      // Neon underline bar
+      const barW = Math.min(100, width * 0.3);
+      const barX = effAlign === 'left' ? x + 24 : effAlign === 'right' ? x + width - 24 - barW : cx - barW / 2;
+      this.drawRoundedRect(ctx, barX, y + 94, barW, 4, 2);
+      ctx.fillStyle = elAccent;
+      ctx.shadowColor = elAccent;
+      ctx.shadowBlur = 8;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // Bottom unit
+      if (!offUnit.hidden && mainUnit) {
+        ctx.save();
+        this.applyZDepth(ctx, offUnit.z);
+        ctx.textAlign = effAlign;
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'unit', textMuted);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'unit', 'bold', 13);
+        ctx.letterSpacing = '2px';
+        ctx.fillText(mainUnit.toUpperCase(), cx + offUnit.x, y + 114 + offUnit.y);
+        ctx.restore();
+      }
+
+      ctx.restore();
+      return y + monoH;
+    }
 
     if (design === 'boxed-bracket') {
       // Style 8: Futuristic Tech HUD Boxed Brackets with glowing corner anchors
       if (cardStyle !== 'floating') {
-        this.drawWidgetCardBg(ctx, 'hero', x, y, width, h, config, theme);
+        this.drawWidgetCardBg(ctx, widgetKey, x, y, width, h, config, theme);
       }
       ctx.strokeStyle = elAccent;
       ctx.lineWidth = 2;
@@ -1989,27 +2837,40 @@ export class OverlayRenderer {
       ctx.moveTo(x + width - 8 - bLen, y + h - 8); ctx.lineTo(x + width - 8, y + h - 8); ctx.lineTo(x + width - 8, y + h - 8 - bLen);
       ctx.stroke();
 
-      ctx.fillStyle = elAccent;
-      ctx.beginPath(); ctx.arc(x + 24, y + 26, 4, 0, Math.PI * 2); ctx.fill();
-      ctx.textAlign = 'left';
-      ctx.font = this.getSubPartFont(config, 'hero', 'label', 'bold', 11);
-      ctx.fillText(label.toUpperCase(), x + 34, y + 30);
+      const effAlign = this.getWidgetAlign(align, 'left');
+      const startX = this.getAlignX(effAlign, x, width, 24, 'left');
 
-      ctx.fillStyle = text;
-      ctx.font = this.getSubPartFont(config, 'hero', 'val', 'bold', 56);
-      ctx.fillText(mainVal, x + 24, y + 84);
-
-      if (mainUnit) {
-        const vw = ctx.measureText(mainVal).width;
+      if (!offLabel.hidden && label) {
+        ctx.textAlign = effAlign;
         ctx.fillStyle = elAccent;
-        ctx.font = this.getSubPartFont(config, 'hero', 'unit', 'bold', 22);
-        ctx.fillText(mainUnit, x + 36 + vw, y + 82);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'label', 'bold', 11);
+        const dotX = effAlign === 'left' ? startX : effAlign === 'right' ? startX - ctx.measureText(label.toUpperCase()).width - 12 : startX - ctx.measureText(label.toUpperCase()).width / 2 - 10;
+        ctx.beginPath(); ctx.arc(dotX, y + 26, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillText(label.toUpperCase(), effAlign === 'left' ? startX + 10 : startX, y + 30);
       }
 
-      ctx.textAlign = 'right';
-      ctx.fillStyle = textMuted;
-      ctx.font = `bold 10px monospace`;
-      ctx.fillText(`GPS ACTIVE // METRIC`, x + width - 24, y + 82);
+      if (!offVal.hidden && mainVal) {
+        ctx.fillStyle = text;
+        ctx.font = this.getSubPartFont(config, widgetKey, 'val', 'bold', 56);
+        const valW = ctx.measureText(mainVal).width;
+        ctx.fillText(mainVal, startX, y + 84);
+
+        if (mainUnit && !offUnit.hidden) {
+          ctx.fillStyle = elAccent;
+          ctx.font = this.getSubPartFont(config, widgetKey, 'unit', 'bold', 22);
+          const uX = effAlign === 'left' ? startX + valW + 12 : effAlign === 'right' ? startX - valW - 12 : startX + valW / 2 + 12;
+          ctx.fillText(mainUnit, uX, y + 82);
+        }
+      }
+
+      const statusBadge = this.getTextOverride(config, widgetKey, 'statusBadge', 'GPS ACTIVE // METRIC');
+      const offStatus = this.getElementOffset(config, widgetKey, 'statusBadge');
+      if (effAlign !== 'right' && !offStatus.hidden && statusBadge) {
+        ctx.textAlign = 'right';
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'statusBadge', textMuted);
+        ctx.font = `bold 10px monospace`;
+        ctx.fillText(statusBadge, x + width - 24 + offStatus.x, y + 82 + offStatus.y);
+      }
 
       ctx.restore();
       return y + h;
@@ -2029,19 +2890,28 @@ export class OverlayRenderer {
       ctx.fillStyle = elAccent;
       ctx.fill();
 
-      ctx.textAlign = 'center';
-      ctx.fillStyle = textMuted;
-      ctx.font = this.getSubPartFont(config, 'hero', 'label', 'bold', 11);
-      ctx.fillText(label, x + width / 2, y + 20);
+      if (!offLabel.hidden && label) {
+        ctx.textAlign = 'center';
+        ctx.fillStyle = textMuted;
+        ctx.font = this.getSubPartFont(config, widgetKey, 'label', 'bold', 11);
+        ctx.fillText(label, x + width / 2, y + 20);
+      }
 
-      ctx.fillStyle = text;
-      ctx.font = this.getSubPartFont(config, 'hero', 'val', 'bold', 48);
-      ctx.fillText(`${mainVal} ${mainUnit}`, x + width / 2, y + topH - 12);
+      if (!offVal.hidden && mainVal) {
+        ctx.fillStyle = text;
+        ctx.font = this.getSubPartFont(config, widgetKey, 'val', 'bold', 48);
+        const uStr = (!offUnit.hidden && mainUnit) ? ` ${mainUnit}` : '';
+        ctx.fillText(`${mainVal}${uStr}`, x + width / 2, y + topH - 12);
+      }
 
-      ctx.fillStyle = '#000000';
-      ctx.font = this.getSubPartFont(config, 'hero', 'secondary', 'bold', 11);
-      ctx.letterSpacing = '1px';
-      ctx.fillText(`⚡ RUN TRACKER OFFICIAL STAT`, x + width / 2, y + topH + 16);
+      const runnerStatBadge = this.getTextOverride(config, widgetKey, 'runnerStatBadge', '⚡ RUN TRACKER OFFICIAL STAT');
+      const offRunnerStat = this.getElementOffset(config, widgetKey, 'runnerStatBadge');
+      if (!offRunnerStat.hidden && runnerStatBadge) {
+        ctx.fillStyle = '#000000';
+        ctx.font = this.getSubPartFont(config, widgetKey, 'runnerStatBadge', 'bold', 11);
+        ctx.letterSpacing = '1px';
+        ctx.fillText(runnerStatBadge, x + width / 2 + offRunnerStat.x, y + topH + 16 + offRunnerStat.y);
+      }
 
       ctx.restore();
       return y + h;
@@ -2057,34 +2927,41 @@ export class OverlayRenderer {
       ctx.lineWidth = 2;
       ctx.stroke();
 
+      const effAlign = this.getWidgetAlign(align, 'left');
       const iconR = r - 6;
+      const iconX = effAlign === 'right' ? x + width - r - 6 : effAlign === 'center' ? x + 24 : x + r + 6;
       ctx.fillStyle = elAccent;
       ctx.beginPath();
-      ctx.arc(x + r + 6, y + h / 2, iconR, 0, Math.PI * 2);
+      ctx.arc(iconX, y + h / 2, iconR, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = '#000';
       ctx.font = `bold 22px sans-serif`;
       ctx.textAlign = 'center';
       const icon = heroType === 'time' ? '⏱️' : heroType === 'pace' ? '⚡' : '🏃';
-      ctx.fillText(icon, x + r + 6, y + h / 2 + 7);
+      ctx.fillText(icon, iconX, y + h / 2 + 7);
 
-      ctx.textAlign = 'left';
-      ctx.fillStyle = text;
-      ctx.font = this.getSubPartFont(config, 'hero', 'val', 'bold', 52);
-      const startTextX = x + r * 2 + 20;
-      ctx.fillText(mainVal, startTextX, y + h / 2 + 18);
+      const startTextX = this.getAlignX(effAlign, x, width, r * 2 + 20, 'left');
+      ctx.textAlign = effAlign;
+      if (!offVal.hidden && mainVal) {
+        ctx.fillStyle = text;
+        ctx.font = this.getSubPartFont(config, widgetKey, 'val', 'bold', 52);
+        ctx.fillText(mainVal, startTextX, y + h / 2 + 18);
 
-      const valW = ctx.measureText(mainVal).width;
-      if (mainUnit) {
-        ctx.fillStyle = elAccent;
-        ctx.font = this.getSubPartFont(config, 'hero', 'unit', 'bold', 20);
-        ctx.fillText(mainUnit, startTextX + valW + 10, y + h / 2 + 16);
+        const valW = ctx.measureText(mainVal).width;
+        if (mainUnit && !offUnit.hidden) {
+          ctx.fillStyle = elAccent;
+          ctx.font = this.getSubPartFont(config, widgetKey, 'unit', 'bold', 20);
+          const uX = effAlign === 'left' ? startTextX + valW + 10 : effAlign === 'right' ? startTextX - valW - 10 : startTextX + valW / 2 + 10;
+          ctx.fillText(mainUnit, uX, y + h / 2 + 16);
+        }
       }
 
-      ctx.textAlign = 'right';
-      ctx.fillStyle = textMuted;
-      ctx.font = this.getSubPartFont(config, 'hero', 'label', 'bold', 12);
-      ctx.fillText(label, x + width - 24, y + h / 2 + 5);
+      if (effAlign !== 'right' && !offLabel.hidden && label) {
+        ctx.textAlign = 'right';
+        ctx.fillStyle = textMuted;
+        ctx.font = this.getSubPartFont(config, widgetKey, 'label', 'bold', 12);
+        ctx.fillText(label, x + width - 24, y + h / 2 + 5);
+      }
 
       ctx.restore();
       return y + h;
@@ -2099,36 +2976,49 @@ export class OverlayRenderer {
       ctx.lineWidth = 1;
       ctx.stroke();
 
+      const effAlign = this.getWidgetAlign(align, 'left');
+      const startX = this.getAlignX(effAlign, x, width, 24, 'left');
+
       ctx.fillStyle = elAccent;
-      this.drawRoundedRect(ctx, x, y, 6, h, 3);
+      const barX = effAlign === 'right' ? x + width - 6 : x;
+      this.drawRoundedRect(ctx, barX, y, 6, h, 3);
       ctx.fill();
 
-      ctx.textAlign = 'left';
-      ctx.fillStyle = elAccent;
-      ctx.font = this.getSubPartFont(config, 'hero', 'label', 'bold', 11);
-      ctx.fillText(`// ${label}`, x + 24, y + 26);
-
-      ctx.fillStyle = text;
-      ctx.font = this.getSubPartFont(config, 'hero', 'val', 'bold', 58);
-      ctx.shadowColor = elAccent;
-      ctx.shadowBlur = 10;
-      ctx.fillText(mainVal, x + 24, y + 84);
-      ctx.shadowBlur = 0;
-
-      if (mainUnit) {
-        const vw = ctx.measureText(mainVal).width;
+      if (!offLabel.hidden && label) {
+        ctx.textAlign = effAlign;
         ctx.fillStyle = elAccent;
-        ctx.font = this.getSubPartFont(config, 'hero', 'unit', 'bold', 22);
-        ctx.fillText(mainUnit, x + 34 + vw, y + 82);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'label', 'bold', 11);
+        ctx.fillText(`// ${label}`, startX, y + 26);
       }
 
-      ctx.textAlign = 'right';
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
-      this.drawRoundedRect(ctx, x + width - 110, y + 16, 96, 24, 6);
-      ctx.fill();
-      ctx.fillStyle = elAccent;
-      ctx.font = `bold 10px monospace`;
-      ctx.fillText(`● LIVE_DATA`, x + width - 24, y + 32);
+      if (!offVal.hidden && mainVal) {
+        ctx.fillStyle = text;
+        ctx.font = this.getSubPartFont(config, widgetKey, 'val', 'bold', 58);
+        ctx.shadowColor = elAccent;
+        ctx.shadowBlur = 10;
+        ctx.fillText(mainVal, startX, y + 84);
+        ctx.shadowBlur = 0;
+
+        if (mainUnit && !offUnit.hidden) {
+          const vw = ctx.measureText(mainVal).width;
+          ctx.fillStyle = elAccent;
+          ctx.font = this.getSubPartFont(config, widgetKey, 'unit', 'bold', 22);
+          const uX = effAlign === 'left' ? startX + 10 + vw : effAlign === 'right' ? startX - vw - 10 : startX + vw / 2 + 10;
+          ctx.fillText(mainUnit, uX, y + 82);
+        }
+      }
+
+      const liveDataBadge = this.getTextOverride(config, widgetKey, 'liveDataBadge', '● LIVE_DATA');
+      const offLiveData = this.getElementOffset(config, widgetKey, 'liveDataBadge');
+      if (effAlign !== 'right' && !offLiveData.hidden && liveDataBadge) {
+        ctx.textAlign = 'right';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+        this.drawRoundedRect(ctx, x + width - 110, y + 16, 96, 24, 6);
+        ctx.fill();
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'liveDataBadge', elAccent);
+        ctx.font = `bold 10px monospace`;
+        ctx.fillText(liveDataBadge, x + width - 24 + offLiveData.x, y + 32 + offLiveData.y);
+      }
 
       ctx.restore();
       return y + h;
@@ -2147,15 +3037,26 @@ export class OverlayRenderer {
       ctx.fillStyle = elAccent;
       ctx.fill();
 
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#000000';
-      ctx.font = this.getSubPartFont(config, 'hero', 'label', 'bold', 12);
-      ctx.letterSpacing = '1px';
-      ctx.fillText(`★ OFFICIAL RACE SPLIT // ${label} ★`, x + width / 2, y + 20);
+      const effAlign = this.getWidgetAlign(align, 'center');
+      const cx = this.getAlignX(effAlign, x, width, 24, 'center');
 
-      ctx.fillStyle = '#0f172a';
-      ctx.font = this.getSubPartFont(config, 'hero', 'val', 'bold', 56);
-      ctx.fillText(`${mainVal} ${mainUnit}`, x + width / 2, y + 82);
+      const bibBanner = this.getTextOverride(config, widgetKey, 'bibBanner', '★ OFFICIAL RACE SPLIT ★');
+      const offBibBanner = this.getElementOffset(config, widgetKey, 'bibBanner');
+      if (!offBibBanner.hidden && bibBanner) {
+        ctx.textAlign = effAlign;
+        ctx.fillStyle = '#000000';
+        ctx.font = this.getSubPartFont(config, widgetKey, 'bibBanner', 'bold', 12);
+        ctx.letterSpacing = '1px';
+        const bannerText = bibBanner.includes('${label}') ? bibBanner.replace('${label}', label) : `${bibBanner} // ${label}`;
+        ctx.fillText(bannerText, cx + offBibBanner.x, y + 20 + offBibBanner.y);
+      }
+
+      if (!offVal.hidden && mainVal) {
+        ctx.fillStyle = '#0f172a';
+        ctx.font = this.getSubPartFont(config, widgetKey, 'val', 'bold', 56);
+        const uStr = (!offUnit.hidden && mainUnit) ? ` ${mainUnit}` : '';
+        ctx.fillText(`${mainVal}${uStr}`, cx, y + 82);
+      }
 
       ctx.fillStyle = '#94a3b8';
       ctx.beginPath(); ctx.arc(x + 12, y + 12, 3, 0, Math.PI * 2); ctx.fill();
@@ -2169,17 +3070,17 @@ export class OverlayRenderer {
 
     if (design === 'minimal-line') {
       // Style 13: Ultra-Minimal Hairline (Zero Box Background)
-      const alignMode = align || 'left';
+      const alignMode = this.getWidgetAlign(align, 'left');
       ctx.textAlign = alignMode;
-      const startX = alignMode === 'center' ? x + width / 2 : alignMode === 'right' ? x + width : x + 8;
+      const startX = alignMode === 'center' ? x + width / 2 : alignMode === 'right' ? x + width - 8 : x + 8;
 
       ctx.fillStyle = elAccent;
-      ctx.font = this.getSubPartFont(config, 'hero', 'label', 'bold', 12);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'label', 'bold', 12);
       ctx.letterSpacing = '1.5px';
       ctx.fillText(label.toUpperCase(), startX, y + 22);
 
       ctx.fillStyle = text;
-      ctx.font = this.getSubPartFont(config, 'hero', 'val', 'bold', 64);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'val', 'bold', 64);
       ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
       ctx.shadowBlur = 10;
       ctx.fillText(mainVal, startX, y + 84);
@@ -2187,7 +3088,7 @@ export class OverlayRenderer {
       if (mainUnit) {
         const vw = ctx.measureText(mainVal).width;
         ctx.fillStyle = elAccent;
-        ctx.font = this.getSubPartFont(config, 'hero', 'unit', 'bold', 24);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'unit', 'bold', 24);
         ctx.shadowBlur = 0;
         const uX = alignMode === 'center' ? startX + vw / 2 + 12 : alignMode === 'right' ? startX : startX + vw + 14;
         ctx.fillText(mainUnit, uX, y + 80);
@@ -2224,20 +3125,24 @@ export class OverlayRenderer {
         ctx.fill();
       }
 
-      ctx.textAlign = 'left';
+      const effAlign = this.getWidgetAlign(align, 'left');
+      const startX = this.getAlignX(effAlign, x, width, 24, 'left');
+
+      ctx.textAlign = effAlign;
       ctx.fillStyle = elAccent;
-      ctx.font = this.getSubPartFont(config, 'hero', 'label', 'bold', 13);
-      ctx.fillText(`⚡ ${label}`, x + 24, y + 36);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'label', 'bold', 13);
+      ctx.fillText(`⚡ ${label}`, startX, y + 36);
 
       ctx.fillStyle = text;
-      ctx.font = this.getSubPartFont(config, 'hero', 'val', 'bold', 58);
-      ctx.fillText(mainVal, x + 24, y + 86);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'val', 'bold', 58);
+      ctx.fillText(mainVal, startX, y + 86);
 
       if (mainUnit) {
         const vw = ctx.measureText(mainVal).width;
         ctx.fillStyle = elAccent;
-        ctx.font = this.getSubPartFont(config, 'hero', 'unit', 'bold', 22);
-        ctx.fillText(mainUnit, x + 34 + vw, y + 84);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'unit', 'bold', 22);
+        const uX = effAlign === 'left' ? startX + 10 + vw : effAlign === 'right' ? startX - vw - 10 : startX + vw / 2 + 10;
+        ctx.fillText(mainUnit, uX, y + 84);
       }
 
       ctx.restore();
@@ -2258,17 +3163,28 @@ export class OverlayRenderer {
       ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
       ctx.fillRect(x + 2, y + 2, width - 4, 18);
 
-      ctx.textAlign = 'center';
-      ctx.fillStyle = elAccent;
-      ctx.font = this.getSubPartFont(config, 'hero', 'label', 'bold', 11);
-      ctx.fillText(`[ DIGITAL TIMER // ${label} ]`, x + width / 2, y + 15);
+      const effAlign = this.getWidgetAlign(align, 'center');
+      const cx = this.getAlignX(effAlign, x, width, 24, 'center');
 
-      ctx.fillStyle = text;
-      ctx.font = this.getSubPartFont(config, 'hero', 'val', 'bold', 60);
-      ctx.shadowColor = elAccent;
-      ctx.shadowBlur = 12;
-      ctx.fillText(`${mainVal} ${mainUnit}`, x + width / 2, y + 82);
-      ctx.shadowBlur = 0;
+      const lcdHeader = this.getTextOverride(config, widgetKey, 'lcdHeader', '[ DIGITAL TIMER ]');
+      const offLcd = this.getElementOffset(config, widgetKey, 'lcdHeader');
+      if (!offLcd.hidden && lcdHeader) {
+        ctx.textAlign = effAlign;
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'lcdHeader', elAccent);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'lcdHeader', 'bold', 11);
+        const headerText = lcdHeader.includes('${label}') ? lcdHeader.replace('${label}', label) : `${lcdHeader} // ${label}`;
+        ctx.fillText(headerText, cx + offLcd.x, y + 15 + offLcd.y);
+      }
+
+      if (!offVal.hidden && mainVal) {
+        ctx.fillStyle = text;
+        ctx.font = this.getSubPartFont(config, widgetKey, 'val', 'bold', 60);
+        ctx.shadowColor = elAccent;
+        ctx.shadowBlur = 12;
+        const uStr = (!offUnit.hidden && mainUnit) ? ` ${mainUnit}` : '';
+        ctx.fillText(`${mainVal}${uStr}`, cx, y + 82);
+        ctx.shadowBlur = 0;
+      }
 
       ctx.restore();
       return y + h;
@@ -2279,7 +3195,8 @@ export class OverlayRenderer {
       if (cardStyle !== 'floating') {
         this.drawCardBackground(ctx, x, y, width, h, config, theme);
       }
-      const cx = x + width / 2;
+      const effAlign = this.getWidgetAlign(align, 'center');
+      const cx = this.getAlignX(effAlign, x, width, 24, 'center');
       const cy = y + h - 10;
       const r = Math.min(width * 0.38, h * 0.85);
 
@@ -2297,13 +3214,13 @@ export class OverlayRenderer {
       ctx.arc(cx, cy, r, Math.PI, Math.PI * 1.72);
       ctx.stroke();
 
-      ctx.textAlign = 'center';
+      ctx.textAlign = effAlign;
       ctx.fillStyle = textMuted;
-      ctx.font = this.getSubPartFont(config, 'hero', 'label', 'bold', 12);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'label', 'bold', 12);
       ctx.fillText(label, cx, y + 30);
 
       ctx.fillStyle = text;
-      ctx.font = this.getSubPartFont(config, 'hero', 'val', 'bold', 48);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'val', 'bold', 48);
       ctx.fillText(`${mainVal} ${mainUnit}`, cx, y + 76);
 
       ctx.restore();
@@ -2317,31 +3234,37 @@ export class OverlayRenderer {
       ctx.strokeStyle = elAccent;
       ctx.stroke();
 
-      // Left Accent Strip
+      const effAlign = this.getWidgetAlign(align, 'left');
+      const isRight = effAlign === 'right';
+      const iconBoxX = isRight ? x + width - 96 : x + 8;
+      const textBoxX = isRight ? x + width - 115 : effAlign === 'center' ? x + width / 2 : x + 115;
+
+      // Left/Right Accent Strip
       ctx.fillStyle = elAccent;
-      this.drawRoundedRect(ctx, x + 8, y + 8, 88, h - 16, 18);
+      this.drawRoundedRect(ctx, iconBoxX, y + 8, 88, h - 16, 18);
       ctx.fill();
       ctx.fillStyle = '#000';
       ctx.font = `bold 24px ${font}`;
       ctx.textAlign = 'center';
       const icon = heroType === 'time' ? '⏱️' : heroType === 'pace' ? '⚡' : '🏃';
-      ctx.fillText(icon, x + 52, y + 58);
+      ctx.fillText(icon, iconBoxX + 44, y + 58);
 
-      // Right Stats
-      ctx.textAlign = 'left';
+      // Right/Center Stats
+      ctx.textAlign = effAlign;
       ctx.fillStyle = textMuted;
-      ctx.font = this.getSubPartFont(config, 'hero', 'label', 'bold', 12);
-      ctx.fillText(label, x + 115, y + 36);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'label', 'bold', 12);
+      ctx.fillText(label, textBoxX, y + 36);
 
       ctx.fillStyle = text;
-      ctx.font = this.getSubPartFont(config, 'hero', 'val', 'bold', 52);
-      ctx.fillText(mainVal, x + 115, y + 82);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'val', 'bold', 52);
+      ctx.fillText(mainVal, textBoxX, y + 82);
 
       if (mainUnit) {
         ctx.fillStyle = elAccent;
-        ctx.font = this.getSubPartFont(config, 'hero', 'unit', 'bold', 20);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'unit', 'bold', 20);
         const valW = ctx.measureText(mainVal).width;
-        ctx.fillText(mainUnit, x + 125 + valW, y + 80);
+        const uX = effAlign === 'left' ? textBoxX + 10 + valW : effAlign === 'right' ? textBoxX - valW - 10 : textBoxX + valW / 2 + 10;
+        ctx.fillText(mainUnit, uX, y + 80);
       }
 
       ctx.restore();
@@ -2353,11 +3276,11 @@ export class OverlayRenderer {
       const centerX = alignMode === 'left' ? x + 24 : alignMode === 'right' ? x + width - 24 : x + width / 2;
       ctx.textAlign = alignMode;
       ctx.fillStyle = textMuted;
-      ctx.font = this.getSubPartFont(config, 'hero', 'label', 'bold', 13);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'label', 'bold', 13);
       ctx.fillText(label, centerX, y + 24);
 
-      const valFont = this.getSubPartFont(config, 'hero', 'val', 'bold', 68);
-      const unitFont = this.getSubPartFont(config, 'hero', 'unit', 'bold', 26);
+      const valFont = this.getSubPartFont(config, widgetKey, 'val', 'bold', 68);
+      const unitFont = this.getSubPartFont(config, widgetKey, 'unit', 'bold', 26);
 
       ctx.font = valFont;
       const valW = ctx.measureText(mainVal).width;
@@ -2397,9 +3320,9 @@ export class OverlayRenderer {
     if (design === 'vertical-totem') {
       // Style: Vertical Monolith Totem (Stacked mega typography)
       const totemH = customH || 140;
-      this.recordBounds('hero', 'Hero Metric', x, y, width, totemH);
+      this.recordBounds(widgetKey, 'Hero Metric', x, y, width, totemH);
       if (cardStyle !== 'floating') {
-        this.drawWidgetCardBg(ctx, 'hero', x, y, width, totemH, config, theme);
+        this.drawWidgetCardBg(ctx, widgetKey, x, y, width, totemH, config, theme);
       }
 
       // Top category pill
@@ -2415,8 +3338,8 @@ export class OverlayRenderer {
       ctx.save();
       this.applyZDepth(ctx, offLabel.z);
       ctx.textAlign = 'center';
-      ctx.fillStyle = this.getSubPartColor(config, 'hero', 'label', elAccent);
-      ctx.font = this.getSubPartFont(config, 'hero', 'label', 'bold', 11);
+      ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'label', elAccent);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'label', 'bold', 11);
       ctx.fillText(label.toUpperCase(), x + width / 2 + offLabel.x, y + 30 + offLabel.y);
       ctx.restore();
 
@@ -2424,8 +3347,8 @@ export class OverlayRenderer {
       ctx.save();
       this.applyZDepth(ctx, offVal.z);
       ctx.textAlign = 'center';
-      ctx.fillStyle = this.getSubPartColor(config, 'hero', 'val', text);
-      ctx.font = this.getSubPartFont(config, 'hero', 'val', 'bold', 68);
+      ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'val', text);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'val', 'bold', 68);
       ctx.shadowColor = 'rgba(0,0,0,0.8)';
       ctx.shadowBlur = 12;
       ctx.fillText(mainVal, x + width / 2 + offVal.x, y + 96 + offVal.y);
@@ -2436,8 +3359,8 @@ export class OverlayRenderer {
         ctx.save();
         this.applyZDepth(ctx, offUnit.z);
         ctx.textAlign = 'center';
-        ctx.fillStyle = this.getSubPartColor(config, 'hero', 'unit', textMuted);
-        ctx.font = this.getSubPartFont(config, 'hero', 'unit', 'bold', 14);
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'unit', textMuted);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'unit', 'bold', 14);
         ctx.letterSpacing = '3px';
         ctx.fillText(mainUnit.toUpperCase(), x + width / 2 + offUnit.x, y + 124 + offUnit.y);
         ctx.restore();
@@ -2450,9 +3373,9 @@ export class OverlayRenderer {
     if (design === 'precision-hud-gauge') {
       // Style: Precision Arc Gauge HUD (Dual calibrated dials & digital center readout)
       const gaugeH = customH || 120;
-      this.recordBounds('hero', 'Hero Metric', x, y, width, gaugeH);
+      this.recordBounds(widgetKey, 'Hero Metric', x, y, width, gaugeH);
       if (cardStyle !== 'floating') {
-        this.drawWidgetCardBg(ctx, 'hero', x, y, width, gaugeH, config, theme);
+        this.drawWidgetCardBg(ctx, widgetKey, x, y, width, gaugeH, config, theme);
       }
 
       const cx = x + width / 2;
@@ -2482,8 +3405,8 @@ export class OverlayRenderer {
       ctx.save();
       this.applyZDepth(ctx, offLabel.z);
       ctx.textAlign = 'center';
-      ctx.fillStyle = this.getSubPartColor(config, 'hero', 'label', textMuted);
-      ctx.font = this.getSubPartFont(config, 'hero', 'label', 'bold', 11);
+      ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'label', textMuted);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'label', 'bold', 11);
       ctx.fillText(label.toUpperCase(), cx + offLabel.x, y + 22 + offLabel.y);
       ctx.restore();
 
@@ -2491,8 +3414,8 @@ export class OverlayRenderer {
       ctx.save();
       this.applyZDepth(ctx, offVal.z);
       ctx.textAlign = 'center';
-      ctx.fillStyle = this.getSubPartColor(config, 'hero', 'val', text);
-      ctx.font = this.getSubPartFont(config, 'hero', 'val', 'bold', 48);
+      ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'val', text);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'val', 'bold', 48);
       ctx.fillText(mainVal, cx + offVal.x, cy + 12 + offVal.y);
       ctx.restore();
 
@@ -2501,8 +3424,8 @@ export class OverlayRenderer {
         ctx.save();
         this.applyZDepth(ctx, offUnit.z);
         ctx.textAlign = 'center';
-        ctx.fillStyle = this.getSubPartColor(config, 'hero', 'unit', elAccent);
-        ctx.font = this.getSubPartFont(config, 'hero', 'unit', 'bold', 12);
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'unit', elAccent);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'unit', 'bold', 12);
         ctx.fillText(mainUnit, cx + offUnit.x, cy + 30 + offUnit.y);
         ctx.restore();
       }
@@ -2514,9 +3437,9 @@ export class OverlayRenderer {
     if (design === 'tactical-crosshair') {
       // Style: Tactical Crosshair Optic (Reticle, corner tickmarks & HUD anchors)
       const tactH = customH || 110;
-      this.recordBounds('hero', 'Hero Metric', x, y, width, tactH);
+      this.recordBounds(widgetKey, 'Hero Metric', x, y, width, tactH);
       if (cardStyle !== 'floating') {
-        this.drawWidgetCardBg(ctx, 'hero', x, y, width, tactH, config, theme);
+        this.drawWidgetCardBg(ctx, widgetKey, x, y, width, tactH, config, theme);
       }
 
       // Corner crosshair ticks
@@ -2531,32 +3454,48 @@ export class OverlayRenderer {
       ctx.stroke();
 
       // Telemetry tags
-      ctx.textAlign = 'left';
-      ctx.fillStyle = elAccent;
-      ctx.font = 'bold 9px monospace';
-      ctx.fillText('+ SYS // OPTIC', x + 16, y + 24);
+      const tacticalSys = this.getTextOverride(config, widgetKey, 'tacticalSys', '+ SYS // OPTIC');
+      const tacticalStatus = this.getTextOverride(config, widgetKey, 'tacticalStatus', 'STATUS: LOCKED');
+      const offTacSys = this.getElementOffset(config, widgetKey, 'tacticalSys');
+      const offTacStatus = this.getElementOffset(config, widgetKey, 'tacticalStatus');
 
-      ctx.textAlign = 'right';
-      ctx.fillStyle = textMuted;
-      ctx.fillText('STATUS: LOCKED', x + width - 16, y + 24);
+      if (!offTacSys.hidden && tacticalSys) {
+        ctx.textAlign = 'left';
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'tacticalSys', elAccent);
+        ctx.font = 'bold 9px monospace';
+        ctx.fillText(tacticalSys, x + 16 + offTacSys.x, y + 24 + offTacSys.y);
+      }
+
+      if (!offTacStatus.hidden && tacticalStatus) {
+        ctx.textAlign = 'right';
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'tacticalStatus', textMuted);
+        ctx.font = 'bold 9px monospace';
+        ctx.fillText(tacticalStatus, x + width - 16 + offTacStatus.x, y + 24 + offTacStatus.y);
+      }
 
       // Center value
-      ctx.save();
-      this.applyZDepth(ctx, offVal.z);
-      ctx.textAlign = 'center';
-      ctx.fillStyle = this.getSubPartColor(config, 'hero', 'val', text);
-      ctx.font = this.getSubPartFont(config, 'hero', 'val', 'bold', 56);
-      ctx.fillText(mainVal, x + width / 2 + offVal.x, y + 74 + offVal.y);
-      ctx.restore();
+      if (!offVal.hidden && mainVal) {
+        ctx.save();
+        this.applyZDepth(ctx, offVal.z);
+        ctx.textAlign = 'center';
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'val', text);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'val', 'bold', 56);
+        ctx.fillText(mainVal, x + width / 2 + offVal.x, y + 74 + offVal.y);
+        ctx.restore();
+      }
 
       // Unit and label footer
-      ctx.save();
-      this.applyZDepth(ctx, offUnit.z);
-      ctx.textAlign = 'center';
-      ctx.fillStyle = this.getSubPartColor(config, 'hero', 'unit', elAccent);
-      ctx.font = this.getSubPartFont(config, 'hero', 'unit', 'bold', 12);
-      ctx.fillText(`${label.toUpperCase()} [ ${mainUnit || 'TOTAL'} ]`, x + width / 2 + offUnit.x, y + tactH - 14 + offUnit.y);
-      ctx.restore();
+      if (!offLabel.hidden || !offUnit.hidden) {
+        ctx.save();
+        this.applyZDepth(ctx, offUnit.z);
+        ctx.textAlign = 'center';
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'unit', elAccent);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'unit', 'bold', 12);
+        const lStr = !offLabel.hidden ? label.toUpperCase() : '';
+        const uStr = !offUnit.hidden ? ` [ ${mainUnit || 'TOTAL'} ]` : '';
+        ctx.fillText(`${lStr}${uStr}`.trim(), x + width / 2 + offUnit.x, y + tactH - 14 + offUnit.y);
+        ctx.restore();
+      }
 
       ctx.restore();
       return y + tactH;
@@ -2565,7 +3504,7 @@ export class OverlayRenderer {
     if (design === 'angled-speed-slash') {
       // Style: Dynamic Speed Slash (Athletic slanted card with speed gradient)
       const slashH = customH || 105;
-      this.recordBounds('hero', 'Hero Metric', x, y, width, slashH);
+      this.recordBounds(widgetKey, 'Hero Metric', x, y, width, slashH);
 
       // Angled slanted background
       const slant = 18;
@@ -2601,16 +3540,16 @@ export class OverlayRenderer {
       ctx.save();
       this.applyZDepth(ctx, offLabel.z);
       ctx.textAlign = 'left';
-      ctx.fillStyle = this.getSubPartColor(config, 'hero', 'label', elAccent);
-      ctx.font = this.getSubPartFont(config, 'hero', 'label', 'italic bold', 12);
+      ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'label', elAccent);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'label', 'italic bold', 12);
       ctx.fillText(`/// ${label.toUpperCase()}`, x + slant + 16 + offLabel.x, y + 28 + offLabel.y);
       ctx.restore();
 
       ctx.save();
       this.applyZDepth(ctx, offVal.z);
       ctx.textAlign = 'left';
-      ctx.fillStyle = this.getSubPartColor(config, 'hero', 'val', text);
-      ctx.font = this.getSubPartFont(config, 'hero', 'val', 'italic bold', 58);
+      ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'val', text);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'val', 'italic bold', 58);
       ctx.fillText(mainVal, x + slant + 16 + offVal.x, y + 80 + offVal.y);
       const valW = ctx.measureText(mainVal).width;
       ctx.restore();
@@ -2619,8 +3558,8 @@ export class OverlayRenderer {
         ctx.save();
         this.applyZDepth(ctx, offUnit.z);
         ctx.textAlign = 'left';
-        ctx.fillStyle = this.getSubPartColor(config, 'hero', 'unit', textMuted);
-        ctx.font = this.getSubPartFont(config, 'hero', 'unit', 'italic bold', 20);
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'unit', textMuted);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'unit', 'italic bold', 20);
         ctx.fillText(mainUnit, x + slant + 24 + valW + offUnit.x, y + 76 + offUnit.y);
         ctx.restore();
       }
@@ -2631,20 +3570,20 @@ export class OverlayRenderer {
 
     // Default 'mega' and 'card':
     if (cardStyle !== 'floating') {
-      this.drawWidgetCardBg(ctx, 'hero', x, y, width, h, config, theme, design === 'card');
+      this.drawWidgetCardBg(ctx, widgetKey, x, y, width, h, config, theme, design === 'card');
     }
 
     const alignMode = align || 'center';
     const centerX = (alignMode === 'left' ? x + 24 : alignMode === 'right' ? x + width - 24 : x + width / 2) + offLabel.x;
     ctx.textAlign = alignMode;
     this.applyZDepth(ctx, offLabel.z);
-    ctx.fillStyle = this.getSubPartColor(config, 'hero', 'label', textMuted);
-    ctx.font = this.getSubPartFont(config, 'hero', 'label', 'bold', 13);
+    ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'label', textMuted);
+    ctx.font = this.getSubPartFont(config, widgetKey, 'label', 'bold', 13);
     ctx.letterSpacing = '1px';
     ctx.fillText(label, centerX, y + 26 + offLabel.y);
 
-    const valFont = this.getSubPartFont(config, 'hero', 'val', 'bold', 64);
-    const unitFont = this.getSubPartFont(config, 'hero', 'unit', 'bold', 24);
+    const valFont = this.getSubPartFont(config, widgetKey, 'val', 'bold', 64);
+    const unitFont = this.getSubPartFont(config, widgetKey, 'unit', 'bold', 24);
 
     ctx.font = valFont;
     const valW = ctx.measureText(mainVal).width;
@@ -2664,7 +3603,7 @@ export class OverlayRenderer {
 
     ctx.textAlign = 'left';
     this.applyZDepth(ctx, offVal.z);
-    ctx.fillStyle = this.getSubPartColor(config, 'hero', 'val', text);
+    ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'val', text);
     ctx.font = valFont;
     ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
     ctx.shadowBlur = 10;
@@ -2674,7 +3613,7 @@ export class OverlayRenderer {
     if (mainUnit) {
       this.applyZDepth(ctx, offUnit.z);
       ctx.shadowBlur = 0;
-      ctx.fillStyle = this.getSubPartColor(config, 'hero', 'unit', elAccent);
+      ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'unit', elAccent);
       ctx.font = unitFont;
       ctx.fillText(mainUnit, startX + valW + gap + offUnit.x, y + 80 + offUnit.y);
     }
@@ -2687,41 +3626,220 @@ export class OverlayRenderer {
   // WIDGET 4: SECONDARY METRICS
   // Designs: 'grid', 'strip', 'badges', 'compact', 'circular-gauges', 'editorial-table', 'pill-row'
   // =========================================================================
-  drawMetricsGrid(ctx, x, y, width, activity, config, theme, accent, cols = 3, customH = null) {
+  drawMetricsGrid(ctx, x, y, width, activity, config, theme, accent, cols = 3, customH = null, widgetKey = 'metrics') {
     ctx.save();
-    const elStyle = this.getElementStyle(config, 'metrics');
-    const { text, textMuted, accent: elAccent, cardStyle, align, opacity } = this.getEffectiveColors(config, theme, accent, 'metrics');
+    const elStyle = this.getElementStyle(config, widgetKey);
+    const { text, textMuted, accent: elAccent, cardStyle, align, opacity } = this.getEffectiveColors(config, theme, accent, widgetKey);
     if (opacity < 1) ctx.globalAlpha = opacity;
     accent = elAccent;
 
     const font = this.getFontFamily(elStyle.fontFamily !== 'default' ? elStyle.fontFamily : config.fontFamily);
     const design = config.metricsDesign || 'grid';
 
-    const offLabel = this.getElementOffset(config, 'metrics', 'label');
-    const offVal = this.getElementOffset(config, 'metrics', 'val');
-
     const isLive = activity.isAnimated && activity.progress < 0.999;
     const paceLabelDefault = isLive ? 'PACE' : 'AVG PACE';
     const hrLabelDefault = isLive ? 'HEART RATE' : 'AVG HR';
 
     const metrics = [];
-    if (config.heroMetric !== 'time') metrics.push({ label: this.getMetricLabel(config, 'Time', 'TIME'), val: activity.durationFormatted, icon: '⏱️' });
-    if (config.heroMetric !== 'pace') metrics.push({ label: this.getMetricLabel(config, 'Pace', paceLabelDefault), val: activity.avgPaceFormatted, icon: '⚡' });
-    if (activity.avgHr && config.metricShowHr !== false) metrics.push({ label: this.getMetricLabel(config, 'Hr', hrLabelDefault), val: `${activity.avgHr} bpm`, icon: '❤️' });
-    if (activity.elevationGain !== null && config.metricShowElevation !== false) metrics.push({ label: this.getMetricLabel(config, 'Elevation', 'ELEV GAIN'), val: `+${activity.elevationGain}m`, icon: '⛰️' });
-    if (activity.avgCadence && config.metricShowCadence !== false) metrics.push({ label: this.getMetricLabel(config, 'Cadence', 'CADENCE'), val: `${activity.avgCadence} spm`, icon: '👟' });
-    if (activity.calories && config.metricShowCalories !== false) metrics.push({ label: this.getMetricLabel(config, 'Calories', 'CALORIES'), val: `${activity.calories} kcal`, icon: '🔥' });
-    if (activity.bestPaceFormatted && config.metricShowBestPace !== false) metrics.push({ label: this.getMetricLabel(config, 'BestPace', 'BEST PACE'), val: activity.bestPaceFormatted, icon: '🚀' });
+    if (config.heroMetric === 'time' || config.metricShowDistance) metrics.push({ key: 'distance', label: this.getMetricLabel(config, 'Distance', 'DISTANCE'), val: `${activity.distanceFormatted} km`, icon: '📍' });
+    if (config.heroMetric !== 'time') metrics.push({ key: 'time', label: this.getMetricLabel(config, 'Time', 'TIME'), val: activity.durationFormatted, icon: '⏱️' });
+    if (config.heroMetric !== 'pace') metrics.push({ key: 'pace', label: this.getMetricLabel(config, 'Pace', paceLabelDefault), val: activity.avgPaceFormatted, icon: '⚡' });
+    if (activity.avgHr && config.metricShowHr !== false) metrics.push({ key: 'hr', label: this.getMetricLabel(config, 'Hr', hrLabelDefault), val: `${activity.avgHr} bpm`, icon: '❤️' });
+    if (activity.elevationGain !== null && config.metricShowElevation !== false) metrics.push({ key: 'elevation', label: this.getMetricLabel(config, 'Elevation', 'ELEV GAIN'), val: `+${activity.elevationGain}m`, icon: '⛰️' });
+    if (activity.avgCadence && config.metricShowCadence !== false) metrics.push({ key: 'cadence', label: this.getMetricLabel(config, 'Cadence', 'CADENCE'), val: `${activity.avgCadence} spm`, icon: '👟' });
+    if (activity.calories && config.metricShowCalories !== false) metrics.push({ key: 'calories', label: this.getMetricLabel(config, 'Calories', 'CALORIES'), val: `${activity.calories} kcal`, icon: '🔥' });
+    if (activity.bestPaceFormatted && config.metricShowBestPace !== false) metrics.push({ key: 'bestPace', label: this.getMetricLabel(config, 'BestPace', 'BEST PACE'), val: activity.bestPaceFormatted, icon: '🚀' });
+
+    metrics.forEach((m) => {
+      const customLabel = this.getTextOverride(config, widgetKey, `${m.key}Label`, null) || this.getTextOverride(config, widgetKey, m.key, null);
+      if (customLabel) m.label = customLabel;
+      const customVal = this.getTextOverride(config, widgetKey, `${m.key}Val`, null);
+      if (customVal) m.val = customVal;
+    });
 
     const displayMetrics = metrics.slice(0, cols);
-    if (offLabel.hidden) displayMetrics.forEach((m) => { m.label = ''; m.icon = ''; });
-    if (offVal.hidden) displayMetrics.forEach((m) => { m.val = ''; });
     const cardH = customH || 80;
-    this.recordBounds('metrics', 'Secondary Metrics', x, y, width, cardH);
-    this.drawWidgetCardBg(ctx, 'metrics', x, y, width, cardH, config, theme);
+    this.recordBounds(widgetKey, 'Secondary Metrics', x, y, width, cardH);
+    this.drawWidgetCardBg(ctx, widgetKey, x, y, width, cardH, config, theme);
+
+    if (design === 'centered-pod-triad') {
+      const count = Math.min(displayMetrics.length, 3);
+      const gapX = 10;
+      const podW = (width - (count - 1) * gapX) / count;
+      const podH = customH || 95;
+      this.recordBounds(widgetKey, 'Secondary Metrics', x, y, width, podH);
+      const effAlign = this.getWidgetAlign(align, 'center');
+
+      displayMetrics.slice(0, count).forEach((m, idx) => {
+        const mOff = this.getMetricItemOffsets(config, widgetKey, m.key);
+        if (mOff.item.hidden) return;
+        const px = x + idx * (podW + gapX) + mOff.item.x;
+        const py = y + mOff.item.y;
+        const pcx = effAlign === 'left' ? px + 18 : effAlign === 'right' ? px + podW - 18 : px + podW / 2;
+
+        ctx.save();
+        this.applyZDepth(ctx, mOff.item.z);
+        this.drawRoundedRect(ctx, px, py, podW, podH, 18);
+        ctx.fillStyle = cardStyle === 'solid' ? '#121624' : 'rgba(16, 20, 32, 0.88)';
+        ctx.fill();
+        ctx.strokeStyle = elAccent;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.restore();
+
+        if (m.icon && !mOff.label.hidden) {
+          ctx.beginPath();
+          ctx.arc(px + podW / 2, py + 24, 12, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+          ctx.textAlign = 'center';
+          ctx.font = '12px sans-serif';
+          ctx.fillText(m.icon, px + podW / 2, py + 28);
+        }
+
+        if (!mOff.val.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.val.z);
+          ctx.textAlign = effAlign;
+          ctx.fillStyle = mOff.val.color !== 'default' ? mOff.val.color : text;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'val', 'bold', 20);
+          ctx.shadowColor = elAccent;
+          ctx.shadowBlur = 8;
+          ctx.fillText(m.val, pcx + mOff.val.x, py + (m.icon ? 56 : 46) + mOff.val.y);
+          ctx.restore();
+        }
+
+        if (!mOff.label.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.label.z);
+          ctx.textAlign = effAlign;
+          ctx.fillStyle = mOff.label.color !== 'default' ? mOff.label.color : textMuted;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'label', 'bold', 10);
+          ctx.letterSpacing = '1px';
+          ctx.fillText(m.label.toUpperCase(), pcx + mOff.label.x, py + (m.icon ? 78 : 72) + mOff.label.y);
+          ctx.restore();
+        }
+      });
+
+      ctx.restore();
+      return y + podH;
+    }
+
+    if (design === 'centered-pill-clusters') {
+      const count = Math.min(displayMetrics.length, 4);
+      const isTwoCol = count >= 3 && width > 420;
+      const colsInCluster = isTwoCol ? 2 : 1;
+      const rowsInCluster = Math.ceil(count / colsInCluster);
+      const pillH = Math.max(38, Math.min(48, Math.floor((cardH - (rowsInCluster - 1) * 8) / rowsInCluster)));
+      const totalH = rowsInCluster * pillH + (rowsInCluster - 1) * 8;
+      this.recordBounds(widgetKey, 'Secondary Metrics', x, y, width, totalH);
+      const effAlign = this.getWidgetAlign(align, 'center');
+      const gapX = 10;
+      const pillW = isTwoCol ? (width - gapX) / 2 : width;
+
+      displayMetrics.slice(0, count).forEach((m, idx) => {
+        const mOff = this.getMetricItemOffsets(config, widgetKey, m.key);
+        if (mOff.item.hidden) return;
+        const c = idx % colsInCluster;
+        const r = Math.floor(idx / colsInCluster);
+        const px = (isTwoCol ? x + c * (pillW + gapX) : x) + mOff.item.x;
+        const py = y + r * (pillH + 8) + mOff.item.y;
+        const pcx = effAlign === 'left' ? px + 18 : effAlign === 'right' ? px + pillW - 18 : px + pillW / 2;
+
+        ctx.save();
+        this.applyZDepth(ctx, mOff.item.z);
+        this.drawRoundedRect(ctx, px, py, pillW, pillH, pillH / 2);
+        ctx.fillStyle = cardStyle === 'solid' ? '#141824' : 'rgba(18, 22, 34, 0.85)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.restore();
+
+        if (!mOff.val.hidden || !mOff.label.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, Math.max(mOff.val.z, mOff.label.z));
+          ctx.textAlign = effAlign;
+          ctx.fillStyle = mOff.val.color !== 'default' ? mOff.val.color : text;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'val', 'bold', 13);
+          const iconPrefix = m.icon ? `${m.icon} ` : '';
+          const lStr = !mOff.label.hidden ? `${iconPrefix}${m.label}: ` : '';
+          const vStr = !mOff.val.hidden ? m.val : '';
+          ctx.fillText(`${lStr}${vStr}`, pcx + mOff.val.x, py + pillH / 2 + 5 + mOff.val.y);
+          ctx.restore();
+        }
+      });
+
+      ctx.restore();
+      return y + totalH;
+    }
+
+    if (design === 'centered-cross-quad') {
+      const quadH = customH || 110;
+      this.recordBounds(widgetKey, 'Secondary Metrics', x, y, width, quadH);
+      const effAlign = this.getWidgetAlign(align, 'center');
+
+      this.drawRoundedRect(ctx, x, y, width, quadH, 16);
+      ctx.fillStyle = cardStyle === 'solid' ? '#10141f' : 'rgba(12, 16, 26, 0.9)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      const midX = x + width / 2;
+      const midY = y + quadH / 2;
+
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x + 16, midY); ctx.lineTo(x + width - 16, midY);
+      ctx.moveTo(midX, y + 10); ctx.lineTo(midX, y + quadH - 10);
+      ctx.stroke();
+
+      ctx.fillStyle = elAccent;
+      ctx.beginPath(); ctx.arc(midX, midY, 3, 0, Math.PI * 2); ctx.fill();
+
+      const halfW = width / 2;
+      const halfH = quadH / 2;
+
+      displayMetrics.slice(0, 4).forEach((m, idx) => {
+        const mOff = this.getMetricItemOffsets(config, widgetKey, m.key);
+        if (mOff.item.hidden) return;
+        const c = idx % 2;
+        const r = Math.floor(idx / 2);
+        const cellX = x + c * halfW + mOff.item.x;
+        const cellY = y + r * halfH + mOff.item.y;
+        const cx = effAlign === 'left' ? cellX + 20 : effAlign === 'right' ? cellX + halfW - 20 : cellX + halfW / 2;
+
+        if (!mOff.label.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.label.z);
+          ctx.textAlign = effAlign;
+          ctx.fillStyle = mOff.label.color !== 'default' ? mOff.label.color : textMuted;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'label', 'bold', 10);
+          ctx.fillText(m.label.toUpperCase(), cx + mOff.label.x, cellY + 18 + mOff.label.y);
+          ctx.restore();
+        }
+
+        if (!mOff.val.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.val.z);
+          ctx.textAlign = effAlign;
+          ctx.fillStyle = mOff.val.color !== 'default' ? mOff.val.color : text;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'val', 'bold', 17);
+          ctx.fillText(m.val, cx + mOff.val.x, cellY + 38 + mOff.val.y);
+          ctx.restore();
+        }
+      });
+
+      ctx.restore();
+      return y + quadH;
+    }
 
     if (design === 'cards-2col') {
-      // Style 8: 2-Column Bold Stat Cards with Left Accent Indicator
       const halfCols = 2;
       const count = displayMetrics.length;
       const rows = Math.ceil(count / halfCols);
@@ -2730,14 +3848,18 @@ export class OverlayRenderer {
       const itemW = (width - gapX) / 2;
       const singleH = Math.max(50, Math.floor((cardH - (rows - 1) * gapY) / rows));
       const totalH = rows * singleH + (rows - 1) * gapY;
-      this.recordBounds('metrics', 'Secondary Metrics', x, y, width, totalH);
+      this.recordBounds(widgetKey, 'Secondary Metrics', x, y, width, totalH);
 
       displayMetrics.forEach((m, idx) => {
+        const mOff = this.getMetricItemOffsets(config, widgetKey, m.key);
+        if (mOff.item.hidden) return;
         const c = idx % 2;
         const r = Math.floor(idx / 2);
-        const ix = x + c * (itemW + gapX);
-        const iy = y + r * (singleH + gapY);
+        const ix = x + c * (itemW + gapX) + mOff.item.x;
+        const iy = y + r * (singleH + gapY) + mOff.item.y;
 
+        ctx.save();
+        this.applyZDepth(ctx, mOff.item.z);
         this.drawRoundedRect(ctx, ix, iy, itemW, singleH, 10);
         ctx.fillStyle = cardStyle === 'solid' ? '#14141e' : 'rgba(20, 20, 30, 0.85)';
         ctx.fill();
@@ -2747,15 +3869,27 @@ export class OverlayRenderer {
         ctx.fillStyle = elAccent;
         this.drawRoundedRect(ctx, ix + 2, iy + 6, 4, singleH - 12, 2);
         ctx.fill();
+        ctx.restore();
 
-        ctx.textAlign = 'left';
-        ctx.fillStyle = textMuted;
-        ctx.font = this.getSubPartFont(config, 'metrics', 'label', 'bold', 10);
-        ctx.fillText(m.label, ix + 14, iy + singleH * 0.38);
+        if (!mOff.label.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.label.z);
+          ctx.textAlign = 'left';
+          ctx.fillStyle = mOff.label.color !== 'default' ? mOff.label.color : textMuted;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'label', 'bold', 10);
+          ctx.fillText(m.label, ix + 14 + mOff.label.x, iy + singleH * 0.38 + mOff.label.y);
+          ctx.restore();
+        }
 
-        ctx.fillStyle = text;
-        ctx.font = this.getSubPartFont(config, 'metrics', 'val', 'bold', 18);
-        ctx.fillText(m.val, ix + 14, iy + singleH * 0.82);
+        if (!mOff.val.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.val.z);
+          ctx.textAlign = 'left';
+          ctx.fillStyle = mOff.val.color !== 'default' ? mOff.val.color : text;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'val', 'bold', 18);
+          ctx.fillText(m.val, ix + 14 + mOff.val.x, iy + singleH * 0.82 + mOff.val.y);
+          ctx.restore();
+        }
       });
 
       ctx.restore();
@@ -2763,32 +3897,43 @@ export class OverlayRenderer {
     }
 
     if (design === 'vertical-stacked-hud') {
-      // Style 9: Vertical Telemetry Rows with icons & right values
       const count = displayMetrics.length;
       const rowH = Math.max(26, Math.floor(cardH / count));
       const totalH = count * rowH;
-      this.recordBounds('metrics', 'Secondary Metrics', x, y, width, totalH);
+      this.recordBounds(widgetKey, 'Secondary Metrics', x, y, width, totalH);
 
       if (cardStyle !== 'floating') {
         this.drawCardBackground(ctx, x, y, width, totalH, config, theme);
       }
 
       displayMetrics.forEach((m, idx) => {
-        const ry = y + idx * rowH;
+        const mOff = this.getMetricItemOffsets(config, widgetKey, m.key);
+        if (mOff.item.hidden) return;
+        const ry = y + idx * rowH + mOff.item.y;
         if (idx > 0) {
           ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
           ctx.beginPath(); ctx.moveTo(x + 12, ry); ctx.lineTo(x + width - 12, ry); ctx.stroke();
         }
 
-        ctx.textAlign = 'left';
-        ctx.fillStyle = elAccent;
-        ctx.font = this.getSubPartFont(config, 'metrics', 'label', 'bold', 12);
-        ctx.fillText(`${m.icon} ${m.label}`, x + 16, ry + rowH * 0.68);
+        if (!mOff.label.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.label.z);
+          ctx.textAlign = 'left';
+          ctx.fillStyle = mOff.label.color !== 'default' ? mOff.label.color : elAccent;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'label', 'bold', 12);
+          ctx.fillText(`${m.icon} ${m.label}`, x + 16 + mOff.item.x + mOff.label.x, ry + rowH * 0.68 + mOff.label.y);
+          ctx.restore();
+        }
 
-        ctx.textAlign = 'right';
-        ctx.fillStyle = text;
-        ctx.font = this.getSubPartFont(config, 'metrics', 'val', 'bold', 14);
-        ctx.fillText(m.val, x + width - 16, ry + rowH * 0.68);
+        if (!mOff.val.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.val.z);
+          ctx.textAlign = 'right';
+          ctx.fillStyle = mOff.val.color !== 'default' ? mOff.val.color : text;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'val', 'bold', 14);
+          ctx.fillText(m.val, x + width - 16 + mOff.item.x + mOff.val.x, ry + rowH * 0.68 + mOff.val.y);
+          ctx.restore();
+        }
       });
 
       ctx.restore();
@@ -2796,30 +3941,46 @@ export class OverlayRenderer {
     }
 
     if (design === 'split-scoreboard') {
-      // Style 10: LED Marathon Scoreboard Tiles
       const cardGap = 8;
       const itemW = (width - cardGap * (displayMetrics.length - 1)) / displayMetrics.length;
 
       displayMetrics.forEach((m, idx) => {
-        const itemX = x + idx * (itemW + cardGap);
-        this.drawRoundedRect(ctx, itemX, y, itemW, cardH, 6);
+        const mOff = this.getMetricItemOffsets(config, widgetKey, m.key);
+        if (mOff.item.hidden) return;
+        const itemX = x + idx * (itemW + cardGap) + mOff.item.x;
+        const itemY = y + mOff.item.y;
+
+        ctx.save();
+        this.applyZDepth(ctx, mOff.item.z);
+        this.drawRoundedRect(ctx, itemX, itemY, itemW, cardH, 6);
         ctx.fillStyle = '#0a0a10';
         ctx.fill();
         ctx.strokeStyle = '#222230';
         ctx.lineWidth = 1.5;
         ctx.stroke();
+        ctx.restore();
 
-        ctx.textAlign = 'center';
-        ctx.fillStyle = '#f59e0b';
-        ctx.font = `bold 10px monospace`;
-        ctx.fillText(m.label, itemX + itemW / 2, y + 24);
+        if (!mOff.label.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.label.z);
+          ctx.textAlign = 'center';
+          ctx.fillStyle = mOff.label.color !== 'default' ? mOff.label.color : '#f59e0b';
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'label', 'bold', 10);
+          ctx.fillText(m.label, itemX + itemW / 2 + mOff.label.x, itemY + 24 + mOff.label.y);
+          ctx.restore();
+        }
 
-        ctx.fillStyle = elAccent;
-        ctx.font = `bold 19px monospace`;
-        ctx.shadowColor = elAccent;
-        ctx.shadowBlur = 8;
-        ctx.fillText(m.val, itemX + itemW / 2, y + 58);
-        ctx.shadowBlur = 0;
+        if (!mOff.val.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.val.z);
+          ctx.textAlign = 'center';
+          ctx.fillStyle = mOff.val.color !== 'default' ? mOff.val.color : elAccent;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'val', 'bold', 19);
+          ctx.shadowColor = elAccent;
+          ctx.shadowBlur = 8;
+          ctx.fillText(m.val, itemX + itemW / 2 + mOff.val.x, itemY + 58 + mOff.val.y);
+          ctx.restore();
+        }
       });
 
       ctx.restore();
@@ -2827,13 +3988,18 @@ export class OverlayRenderer {
     }
 
     if (design === 'cyber-brackets') {
-      // Style 11: Cyberpunk Corner Brackets on Each Stat Card
       const cardGap = 10;
       const itemW = (width - cardGap * (displayMetrics.length - 1)) / displayMetrics.length;
 
       displayMetrics.forEach((m, idx) => {
-        const itemX = x + idx * (itemW + cardGap);
-        this.drawRoundedRect(ctx, itemX, y, itemW, cardH, 4);
+        const mOff = this.getMetricItemOffsets(config, widgetKey, m.key);
+        if (mOff.item.hidden) return;
+        const itemX = x + idx * (itemW + cardGap) + mOff.item.x;
+        const itemY = y + mOff.item.y;
+
+        ctx.save();
+        this.applyZDepth(ctx, mOff.item.z);
+        this.drawRoundedRect(ctx, itemX, itemY, itemW, cardH, 4);
         ctx.fillStyle = 'rgba(10, 16, 26, 0.88)';
         ctx.fill();
 
@@ -2841,20 +4007,32 @@ export class OverlayRenderer {
         ctx.lineWidth = 1.5;
         const b = 6;
         ctx.beginPath();
-        ctx.moveTo(itemX, y + b); ctx.lineTo(itemX, y); ctx.lineTo(itemX + b, y);
-        ctx.moveTo(itemX + itemW - b, y); ctx.lineTo(itemX + itemW, y); ctx.lineTo(itemX + itemW, y + b);
-        ctx.moveTo(itemX, y + cardH - b); ctx.lineTo(itemX, y + cardH); ctx.lineTo(itemX + b, y + cardH);
-        ctx.moveTo(itemX + itemW - b, y + cardH); ctx.lineTo(itemX + itemW, y + cardH); ctx.lineTo(itemX + itemW, y + cardH - b);
+        ctx.moveTo(itemX, itemY + b); ctx.lineTo(itemX, itemY); ctx.lineTo(itemX + b, itemY);
+        ctx.moveTo(itemX + itemW - b, itemY); ctx.lineTo(itemX + itemW, itemY); ctx.lineTo(itemX + itemW, itemY + b);
+        ctx.moveTo(itemX, itemY + cardH - b); ctx.lineTo(itemX, itemY + cardH); ctx.lineTo(itemX + b, itemY + cardH);
+        ctx.moveTo(itemX + itemW - b, itemY + cardH); ctx.lineTo(itemX + itemW, itemY + cardH); ctx.lineTo(itemX + itemW, itemY + cardH - b);
         ctx.stroke();
+        ctx.restore();
 
-        ctx.textAlign = 'center';
-        ctx.fillStyle = elAccent;
-        ctx.font = `bold 10px monospace`;
-        ctx.fillText(`[ ${m.label} ]`, itemX + itemW / 2, y + 24);
+        if (!mOff.label.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.label.z);
+          ctx.textAlign = 'center';
+          ctx.fillStyle = mOff.label.color !== 'default' ? mOff.label.color : elAccent;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'label', 'bold', 10);
+          ctx.fillText(`[ ${m.label} ]`, itemX + itemW / 2 + mOff.label.x, itemY + 24 + mOff.label.y);
+          ctx.restore();
+        }
 
-        ctx.fillStyle = text;
-        ctx.font = this.getSubPartFont(config, 'metrics', 'val', 'bold', 20);
-        ctx.fillText(m.val, itemX + itemW / 2, y + 56);
+        if (!mOff.val.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.val.z);
+          ctx.textAlign = 'center';
+          ctx.fillStyle = mOff.val.color !== 'default' ? mOff.val.color : text;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'val', 'bold', 20);
+          ctx.fillText(m.val, itemX + itemW / 2 + mOff.val.x, itemY + 56 + mOff.val.y);
+          ctx.restore();
+        }
       });
 
       ctx.restore();
@@ -2862,27 +4040,44 @@ export class OverlayRenderer {
     }
 
     if (design === 'hex-badges') {
-      // Style 12: Athletic Chamfered Badges
       const cardGap = 8;
       const itemW = (width - cardGap * (displayMetrics.length - 1)) / displayMetrics.length;
 
       displayMetrics.forEach((m, idx) => {
-        const itemX = x + idx * (itemW + cardGap);
-        this.drawRoundedRect(ctx, itemX, y, itemW, cardH, 12);
+        const mOff = this.getMetricItemOffsets(config, widgetKey, m.key);
+        if (mOff.item.hidden) return;
+        const itemX = x + idx * (itemW + cardGap) + mOff.item.x;
+        const itemY = y + mOff.item.y;
+
+        ctx.save();
+        this.applyZDepth(ctx, mOff.item.z);
+        this.drawRoundedRect(ctx, itemX, itemY, itemW, cardH, 12);
         ctx.fillStyle = cardStyle === 'solid' ? '#14141e' : 'rgba(25, 25, 35, 0.85)';
         ctx.fill();
         ctx.strokeStyle = elAccent;
         ctx.lineWidth = 1;
         ctx.stroke();
+        ctx.restore();
 
-        ctx.textAlign = 'center';
-        ctx.fillStyle = textMuted;
-        ctx.font = this.getSubPartFont(config, 'metrics', 'label', 'bold', 10);
-        ctx.fillText(m.label, itemX + itemW / 2, y + 24);
+        if (!mOff.label.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.label.z);
+          ctx.textAlign = 'center';
+          ctx.fillStyle = mOff.label.color !== 'default' ? mOff.label.color : textMuted;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'label', 'bold', 10);
+          ctx.fillText(m.label, itemX + itemW / 2 + mOff.label.x, itemY + 24 + mOff.label.y);
+          ctx.restore();
+        }
 
-        ctx.fillStyle = elAccent;
-        ctx.font = this.getSubPartFont(config, 'metrics', 'val', 'bold', 20);
-        ctx.fillText(m.val, itemX + itemW / 2, y + 56);
+        if (!mOff.val.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.val.z);
+          ctx.textAlign = 'center';
+          ctx.fillStyle = mOff.val.color !== 'default' ? mOff.val.color : elAccent;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'val', 'bold', 20);
+          ctx.fillText(m.val, itemX + itemW / 2 + mOff.val.x, itemY + 56 + mOff.val.y);
+          ctx.restore();
+        }
       });
 
       ctx.restore();
@@ -2890,7 +4085,6 @@ export class OverlayRenderer {
     }
 
     if (design === 'horizontal-ticker') {
-      // Style 13: Compact Single-Line Stat Ribbon
       const hTickerH = 46;
       this.drawRoundedRect(ctx, x, y, width, hTickerH, hTickerH / 2);
       ctx.fillStyle = cardStyle === 'solid' ? '#111118' : 'rgba(15, 15, 24, 0.9)';
@@ -2901,13 +4095,30 @@ export class OverlayRenderer {
 
       const itemW = width / displayMetrics.length;
       displayMetrics.forEach((m, idx) => {
-        const cx = x + idx * itemW + itemW / 2;
-        ctx.textAlign = 'center';
-        ctx.fillStyle = text;
-        ctx.font = this.getSubPartFont(config, 'metrics', 'label', 'bold', 12);
-        ctx.fillText(`${m.label}: `, cx - 14, y + 28);
-        ctx.fillStyle = elAccent;
-        ctx.fillText(m.val, cx + 22, y + 28);
+        const mOff = this.getMetricItemOffsets(config, widgetKey, m.key);
+        if (mOff.item.hidden) return;
+        const cx = x + idx * itemW + itemW / 2 + mOff.item.x;
+        const cy = y + mOff.item.y;
+
+        if (!mOff.label.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.label.z);
+          ctx.textAlign = 'center';
+          ctx.fillStyle = mOff.label.color !== 'default' ? mOff.label.color : text;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'label', 'bold', 12);
+          ctx.fillText(`${m.label}: `, cx - 14 + mOff.label.x, cy + 28 + mOff.label.y);
+          ctx.restore();
+        }
+
+        if (!mOff.val.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.val.z);
+          ctx.textAlign = 'center';
+          ctx.fillStyle = mOff.val.color !== 'default' ? mOff.val.color : elAccent;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'val', 'bold', 12);
+          ctx.fillText(m.val, cx + 22 + mOff.val.x, cy + 28 + mOff.val.y);
+          ctx.restore();
+        }
       });
 
       ctx.restore();
@@ -2915,35 +4126,48 @@ export class OverlayRenderer {
     }
 
     if (design === 'circular-gauges') {
-      // Style 5: Radial Gauge Rings for metrics
       if (cardStyle !== 'floating') {
         this.drawCardBackground(ctx, x, y, width, cardH, config, theme);
       }
       const colW = width / displayMetrics.length;
 
       displayMetrics.forEach((m, idx) => {
-        const cx = x + idx * colW + colW / 2;
-        const cy = y + cardH / 2;
+        const mOff = this.getMetricItemOffsets(config, widgetKey, m.key);
+        if (mOff.item.hidden) return;
+        const cx = x + idx * colW + colW / 2 + mOff.item.x;
+        const cy = y + cardH / 2 + mOff.item.y;
         const r = Math.min(26, cardH * 0.32);
 
-        // Circular background track
+        ctx.save();
+        this.applyZDepth(ctx, mOff.item.z);
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
         ctx.lineWidth = 3.5;
         ctx.beginPath(); ctx.arc(cx, cy - 6, r, 0, Math.PI * 2); ctx.stroke();
 
-        // Accent arc
         ctx.strokeStyle = elAccent;
         ctx.lineWidth = 3.5;
         ctx.beginPath(); ctx.arc(cx, cy - 6, r, -Math.PI / 2, Math.PI * 0.85); ctx.stroke();
+        ctx.restore();
 
-        ctx.textAlign = 'center';
-        ctx.fillStyle = text;
-        ctx.font = this.getSubPartFont(config, 'metrics', 'val', 'bold', 13);
-        ctx.fillText(m.val.split(' ')[0], cx, cy - 2);
+        if (!mOff.val.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.val.z);
+          ctx.textAlign = 'center';
+          ctx.fillStyle = mOff.val.color !== 'default' ? mOff.val.color : text;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'val', 'bold', 13);
+          ctx.fillText(m.val.split(' ')[0], cx + mOff.val.x, cy - 2 + mOff.val.y);
+          ctx.restore();
+        }
 
-        ctx.fillStyle = textMuted;
-        ctx.font = this.getSubPartFont(config, 'metrics', 'label', 'bold', 10);
-        ctx.fillText(m.label, cx, y + cardH - 10);
+        if (!mOff.label.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.label.z);
+          ctx.textAlign = 'center';
+          ctx.fillStyle = mOff.label.color !== 'default' ? mOff.label.color : textMuted;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'label', 'bold', 10);
+          ctx.fillText(m.label, cx + mOff.label.x, y + cardH - 10 + mOff.item.y + mOff.label.y);
+          ctx.restore();
+        }
       });
 
       ctx.restore();
@@ -2951,7 +4175,6 @@ export class OverlayRenderer {
     }
 
     if (design === 'editorial-table') {
-      // Style 6: Official Results Table
       this.drawRoundedRect(ctx, x, y, width, cardH, 8);
       ctx.fillStyle = cardStyle === 'solid' ? '#14141d' : 'rgba(10, 10, 15, 0.9)';
       ctx.fill();
@@ -2961,20 +4184,34 @@ export class OverlayRenderer {
 
       const colW = width / displayMetrics.length;
       displayMetrics.forEach((m, idx) => {
-        const cx = x + idx * colW;
+        const mOff = this.getMetricItemOffsets(config, widgetKey, m.key);
+        if (mOff.item.hidden) return;
+        const cx = x + idx * colW + mOff.item.x;
+        const cy = y + mOff.item.y;
         if (idx % 2 === 1) {
           ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
-          ctx.fillRect(cx, y + 1, colW, cardH - 2);
+          ctx.fillRect(cx, cy + 1, colW, cardH - 2);
         }
 
-        ctx.textAlign = 'left';
-        ctx.fillStyle = elAccent;
-        ctx.font = this.getSubPartFont(config, 'metrics', 'label', 'bold', 10);
-        ctx.fillText(`// ${m.label}`, cx + 12, y + 24);
+        if (!mOff.label.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.label.z);
+          ctx.textAlign = 'left';
+          ctx.fillStyle = mOff.label.color !== 'default' ? mOff.label.color : elAccent;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'label', 'bold', 10);
+          ctx.fillText(`// ${m.label}`, cx + 12 + mOff.label.x, cy + 24 + mOff.label.y);
+          ctx.restore();
+        }
 
-        ctx.fillStyle = text;
-        ctx.font = this.getSubPartFont(config, 'metrics', 'val', 'bold', 22);
-        ctx.fillText(m.val, cx + 12, y + 56);
+        if (!mOff.val.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.val.z);
+          ctx.textAlign = 'left';
+          ctx.fillStyle = mOff.val.color !== 'default' ? mOff.val.color : text;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'val', 'bold', 22);
+          ctx.fillText(m.val, cx + 12 + mOff.val.x, cy + 56 + mOff.val.y);
+          ctx.restore();
+        }
       });
 
       ctx.restore();
@@ -2982,27 +4219,44 @@ export class OverlayRenderer {
     }
 
     if (design === 'pill-row') {
-      // Style 7: Segmented Pill Row
       const cardGap = 8;
       const itemW = (width - cardGap * (displayMetrics.length - 1)) / displayMetrics.length;
 
       displayMetrics.forEach((m, idx) => {
-        const itemX = x + idx * (itemW + cardGap);
-        this.drawRoundedRect(ctx, itemX, y, itemW, cardH, cardH / 2);
+        const mOff = this.getMetricItemOffsets(config, widgetKey, m.key);
+        if (mOff.item.hidden) return;
+        const itemX = x + idx * (itemW + cardGap) + mOff.item.x;
+        const itemY = y + mOff.item.y;
+
+        ctx.save();
+        this.applyZDepth(ctx, mOff.item.z);
+        this.drawRoundedRect(ctx, itemX, itemY, itemW, cardH, cardH / 2);
         ctx.fillStyle = cardStyle === 'solid' ? '#14141d' : 'rgba(20, 20, 30, 0.85)';
         ctx.fill();
         ctx.strokeStyle = elAccent;
         ctx.lineWidth = 1.5;
         ctx.stroke();
+        ctx.restore();
 
-        ctx.textAlign = 'center';
-        ctx.fillStyle = elAccent;
-        ctx.font = this.getSubPartFont(config, 'metrics', 'label', 'bold', 10);
-        ctx.fillText(`${m.icon} ${m.label}`, itemX + itemW / 2, y + 26);
+        if (!mOff.label.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.label.z);
+          ctx.textAlign = 'center';
+          ctx.fillStyle = mOff.label.color !== 'default' ? mOff.label.color : elAccent;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'label', 'bold', 10);
+          ctx.fillText(`${m.icon} ${m.label}`, itemX + itemW / 2 + mOff.label.x, itemY + 26 + mOff.label.y);
+          ctx.restore();
+        }
 
-        ctx.fillStyle = text;
-        ctx.font = this.getSubPartFont(config, 'metrics', 'val', 'bold', 18);
-        ctx.fillText(m.val, itemX + itemW / 2, y + 56);
+        if (!mOff.val.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.val.z);
+          ctx.textAlign = 'center';
+          ctx.fillStyle = mOff.val.color !== 'default' ? mOff.val.color : text;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'val', 'bold', 18);
+          ctx.fillText(m.val, itemX + itemW / 2 + mOff.val.x, itemY + 56 + mOff.val.y);
+          ctx.restore();
+        }
       });
 
       ctx.restore();
@@ -3010,9 +4264,8 @@ export class OverlayRenderer {
     }
 
     if (design === 'horizontal-pipeline') {
-      // Style 14: Horizontal Telemetry Pipeline (Inline Stream //)
       const pipeH = customH || 56;
-      this.recordBounds('metrics', 'Secondary Metrics', x, y, width, pipeH);
+      this.recordBounds(widgetKey, 'Secondary Metrics', x, y, width, pipeH);
       if (cardStyle !== 'floating') {
         this.drawRoundedRect(ctx, x, y, width, pipeH, 12);
         ctx.fillStyle = cardStyle === 'solid' ? '#0d1117' : 'rgba(13, 17, 23, 0.88)';
@@ -3024,31 +4277,38 @@ export class OverlayRenderer {
 
       const colW = width / displayMetrics.length;
       displayMetrics.forEach((m, idx) => {
-        const cx = x + idx * colW;
+        const mOff = this.getMetricItemOffsets(config, widgetKey, m.key);
+        if (mOff.item.hidden) return;
+        const cx = x + idx * colW + mOff.item.x;
+        const cy = y + mOff.item.y;
         if (idx > 0) {
           ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
           ctx.beginPath();
-          ctx.moveTo(cx, y + 10);
-          ctx.lineTo(cx, y + pipeH - 10);
+          ctx.moveTo(cx, cy + 10); ctx.lineTo(cx, cy + pipeH - 10);
           ctx.stroke();
         }
 
         const itemMidX = cx + colW / 2;
-        ctx.save();
-        this.applyZDepth(ctx, offLabel.z);
-        ctx.textAlign = 'center';
-        ctx.fillStyle = this.getSubPartColor(config, 'metrics', 'label', elAccent);
-        ctx.font = this.getSubPartFont(config, 'metrics', 'label', 'bold', 10);
-        ctx.fillText(`// ${m.label}`.toUpperCase(), itemMidX + offLabel.x, y + 19 + offLabel.y);
-        ctx.restore();
 
-        ctx.save();
-        this.applyZDepth(ctx, offVal.z);
-        ctx.textAlign = 'center';
-        ctx.fillStyle = this.getSubPartColor(config, 'metrics', 'val', text);
-        ctx.font = this.getSubPartFont(config, 'metrics', 'val', 'bold', 20);
-        ctx.fillText(m.val, itemMidX + offVal.x, y + pipeH - 14 + offVal.y);
-        ctx.restore();
+        if (!mOff.label.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.label.z);
+          ctx.textAlign = 'center';
+          ctx.fillStyle = mOff.label.color !== 'default' ? mOff.label.color : elAccent;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'label', 'bold', 10);
+          ctx.fillText(`// ${m.label}`.toUpperCase(), itemMidX + mOff.label.x, cy + 19 + mOff.label.y);
+          ctx.restore();
+        }
+
+        if (!mOff.val.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.val.z);
+          ctx.textAlign = 'center';
+          ctx.fillStyle = mOff.val.color !== 'default' ? mOff.val.color : text;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'val', 'bold', 17);
+          ctx.fillText(m.val, itemMidX + mOff.val.x, cy + pipeH - 14 + mOff.val.y);
+          ctx.restore();
+        }
       });
 
       ctx.restore();
@@ -3056,37 +4316,47 @@ export class OverlayRenderer {
     }
 
     if (design === 'horizontal-chips') {
-      // Style 15: Horizontal Stat Chips (Icon + Label + Value inline)
-      const chipH = customH || 48;
       const cardGap = 8;
       const itemW = (width - cardGap * (displayMetrics.length - 1)) / displayMetrics.length;
-      this.recordBounds('metrics', 'Secondary Metrics', x, y, width, chipH);
+      const chipH = customH || 48;
+      this.recordBounds(widgetKey, 'Secondary Metrics', x, y, width, chipH);
 
       displayMetrics.forEach((m, idx) => {
-        const itemX = x + idx * (itemW + cardGap);
-        this.drawRoundedRect(ctx, itemX, y, itemW, chipH, chipH / 2);
-        ctx.fillStyle = cardStyle === 'solid' ? '#14141e' : 'rgba(20, 24, 34, 0.85)';
+        const mOff = this.getMetricItemOffsets(config, widgetKey, m.key);
+        if (mOff.item.hidden) return;
+        const itemX = x + idx * (itemW + cardGap) + mOff.item.x;
+        const itemY = y + mOff.item.y;
+
+        ctx.save();
+        this.applyZDepth(ctx, mOff.item.z);
+        this.drawRoundedRect(ctx, itemX, itemY, itemW, chipH, 8);
+        ctx.fillStyle = cardStyle === 'solid' ? '#0f141c' : 'rgba(15, 20, 28, 0.88)';
         ctx.fill();
-        ctx.strokeStyle = elAccent;
-        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+        ctx.lineWidth = 1;
         ctx.stroke();
-
-        ctx.save();
-        this.applyZDepth(ctx, offLabel.z);
-        ctx.textAlign = 'left';
-        ctx.fillStyle = this.getSubPartColor(config, 'metrics', 'label', textMuted);
-        ctx.font = this.getSubPartFont(config, 'metrics', 'label', 'bold', 10);
-        const labelStr = m.icon ? `${m.icon} ${m.label}` : m.label;
-        ctx.fillText(labelStr, itemX + 14 + offLabel.x, y + chipH / 2 + 4 + offLabel.y);
         ctx.restore();
 
-        ctx.save();
-        this.applyZDepth(ctx, offVal.z);
-        ctx.textAlign = 'right';
-        ctx.fillStyle = this.getSubPartColor(config, 'metrics', 'val', text);
-        ctx.font = this.getSubPartFont(config, 'metrics', 'val', 'bold', 15);
-        ctx.fillText(m.val, itemX + itemW - 14 + offVal.x, y + chipH / 2 + 5 + offVal.y);
-        ctx.restore();
+        if (!mOff.label.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.label.z);
+          ctx.textAlign = 'left';
+          ctx.fillStyle = mOff.label.color !== 'default' ? mOff.label.color : textMuted;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'label', 'bold', 9);
+          const labelStr = m.icon ? `${m.icon} ${m.label}`.toUpperCase() : m.label.toUpperCase();
+          ctx.fillText(labelStr, itemX + 14 + mOff.label.x, itemY + chipH / 2 + 4 + mOff.label.y);
+          ctx.restore();
+        }
+
+        if (!mOff.val.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.val.z);
+          ctx.textAlign = 'right';
+          ctx.fillStyle = mOff.val.color !== 'default' ? mOff.val.color : elAccent;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'val', 'bold', 15);
+          ctx.fillText(m.val, itemX + itemW - 14 + mOff.val.x, itemY + chipH / 2 + 5 + mOff.val.y);
+          ctx.restore();
+        }
       });
 
       ctx.restore();
@@ -3094,41 +4364,45 @@ export class OverlayRenderer {
     }
 
     if (design === 'horizontal-slash-minimal') {
-      // Style 16: Horizontal Minimalist Slash (Clean Floating)
-      const slashH = customH || 50;
-      this.recordBounds('metrics', 'Secondary Metrics', x, y, width, slashH);
-
+      const slashH = customH || 48;
+      this.recordBounds(widgetKey, 'Secondary Metrics', x, y, width, slashH);
       const colW = width / displayMetrics.length;
+
       displayMetrics.forEach((m, idx) => {
-        const cx = x + idx * colW + colW / 2;
+        const mOff = this.getMetricItemOffsets(config, widgetKey, m.key);
+        if (mOff.item.hidden) return;
+        const cx = x + idx * colW + colW / 2 + mOff.item.x;
+        const cy = y + mOff.item.y;
 
         if (idx < displayMetrics.length - 1) {
           const slashX = x + (idx + 1) * colW;
           ctx.save();
-          ctx.fillStyle = elAccent;
-          ctx.font = '300 24px monospace';
           ctx.textAlign = 'center';
-          ctx.globalAlpha = 0.5;
-          ctx.fillText('/', slashX, y + slashH / 2 + 8);
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+          ctx.font = '300 16px sans-serif';
+          ctx.fillText('/', slashX, cy + slashH / 2 + 8);
           ctx.restore();
         }
 
-        ctx.save();
-        this.applyZDepth(ctx, offLabel.z);
-        ctx.textAlign = 'center';
-        ctx.fillStyle = this.getSubPartColor(config, 'metrics', 'label', elAccent);
-        ctx.font = this.getSubPartFont(config, 'metrics', 'label', 'bold', 11);
-        ctx.letterSpacing = '1px';
-        ctx.fillText(m.label.toUpperCase(), cx + offLabel.x, y + 18 + offLabel.y);
-        ctx.restore();
+        if (!mOff.label.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.label.z);
+          ctx.textAlign = 'center';
+          ctx.fillStyle = mOff.label.color !== 'default' ? mOff.label.color : textMuted;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'label', 'bold', 9);
+          ctx.fillText(m.label.toUpperCase(), cx + mOff.label.x, cy + 18 + mOff.label.y);
+          ctx.restore();
+        }
 
-        ctx.save();
-        this.applyZDepth(ctx, offVal.z);
-        ctx.textAlign = 'center';
-        ctx.fillStyle = this.getSubPartColor(config, 'metrics', 'val', text);
-        ctx.font = this.getSubPartFont(config, 'metrics', 'val', 'bold', 22);
-        ctx.fillText(m.val, cx + offVal.x, y + slashH - 6 + offVal.y);
-        ctx.restore();
+        if (!mOff.val.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.val.z);
+          ctx.textAlign = 'center';
+          ctx.fillStyle = mOff.val.color !== 'default' ? mOff.val.color : text;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'val', 'bold', 18);
+          ctx.fillText(m.val, cx + mOff.val.x, cy + slashH - 6 + mOff.val.y);
+          ctx.restore();
+        }
       });
 
       ctx.restore();
@@ -3136,93 +4410,102 @@ export class OverlayRenderer {
     }
 
     if (design === 'horizontal-linear-cards') {
-      // Style 17: Horizontal Leaderboard Rows (Left/Right)
-      const cardH_item = customH || 52;
       const cardGap = 8;
       const itemW = (width - cardGap * (displayMetrics.length - 1)) / displayMetrics.length;
-      this.recordBounds('metrics', 'Secondary Metrics', x, y, width, cardH_item);
+      const cardH_item = customH || 62;
+      this.recordBounds(widgetKey, 'Secondary Metrics', x, y, width, cardH_item);
 
       displayMetrics.forEach((m, idx) => {
-        const itemX = x + idx * (itemW + cardGap);
-        this.drawRoundedRect(ctx, itemX, y, itemW, cardH_item, 8);
-        ctx.fillStyle = cardStyle === 'solid' ? '#12121c' : 'rgba(18, 18, 28, 0.85)';
+        const mOff = this.getMetricItemOffsets(config, widgetKey, m.key);
+        if (mOff.item.hidden) return;
+        const itemX = x + idx * (itemW + cardGap) + mOff.item.x;
+        const itemY = y + mOff.item.y;
+
+        ctx.save();
+        this.applyZDepth(ctx, mOff.item.z);
+        this.drawRoundedRect(ctx, itemX, itemY, itemW, cardH_item, 6);
+        ctx.fillStyle = cardStyle === 'solid' ? '#121620' : 'rgba(18, 22, 32, 0.88)';
         ctx.fill();
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
         ctx.lineWidth = 1;
         ctx.stroke();
 
         ctx.fillStyle = elAccent;
-        this.drawRoundedRect(ctx, itemX + 2, y + 8, 3, cardH_item - 16, 2);
+        this.drawRoundedRect(ctx, itemX + 4, itemY + 2, itemW - 8, 3, 2);
         ctx.fill();
-
-        ctx.save();
-        this.applyZDepth(ctx, offLabel.z);
-        ctx.textAlign = 'left';
-        ctx.fillStyle = this.getSubPartColor(config, 'metrics', 'label', textMuted);
-        ctx.font = this.getSubPartFont(config, 'metrics', 'label', 'bold', 9);
-        ctx.fillText(m.label.toUpperCase(), itemX + 12 + offLabel.x, y + 20 + offLabel.y);
         ctx.restore();
 
-        ctx.save();
-        this.applyZDepth(ctx, offVal.z);
-        ctx.textAlign = 'left';
-        ctx.fillStyle = this.getSubPartColor(config, 'metrics', 'val', text);
-        ctx.font = this.getSubPartFont(config, 'metrics', 'val', 'bold', 19);
-        ctx.fillText(m.val, itemX + 12 + offVal.x, y + cardH_item - 12 + offVal.y);
-        ctx.restore();
+        if (!mOff.label.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.label.z);
+          ctx.textAlign = 'left';
+          ctx.fillStyle = mOff.label.color !== 'default' ? mOff.label.color : textMuted;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'label', 'bold', 9);
+          ctx.fillText(m.label.toUpperCase(), itemX + 12 + mOff.label.x, itemY + 20 + mOff.label.y);
+          ctx.restore();
+        }
+
+        if (!mOff.val.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.val.z);
+          ctx.textAlign = 'left';
+          ctx.fillStyle = mOff.val.color !== 'default' ? mOff.val.color : text;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'val', 'bold', 18);
+          ctx.fillText(m.val, itemX + 12 + mOff.val.x, itemY + cardH_item - 12 + mOff.val.y);
+          ctx.restore();
+        }
       });
 
       ctx.restore();
       return y + cardH_item;
     }
 
-
     if (design === 'vertical-minimal-stack') {
-      // Style: Vertical Minimalist Stack (Clean hairline rows, left accent indicators, right bold values)
       const vertCount = Math.min(displayMetrics.length, 6);
-      const rowH = Math.max(34, Math.floor((customH || (vertCount * 42)) / vertCount));
+      const rowH = 34;
       const totalH = vertCount * rowH;
-      this.recordBounds('metrics', 'Secondary Metrics', x, y, width, totalH);
+      this.recordBounds(widgetKey, 'Secondary Metrics', x, y, width, totalH);
 
-      if (cardStyle !== 'floating' && !this.isTextOnly(config, 'metrics')) {
-        this.drawCardBackground(ctx, x, y, width, totalH, config, theme);
-      }
+      this.drawRoundedRect(ctx, x, y, width, totalH, 12);
+      ctx.fillStyle = cardStyle === 'solid' ? '#0e1118' : 'rgba(14, 17, 24, 0.88)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
 
       displayMetrics.slice(0, vertCount).forEach((m, idx) => {
-        const ry = y + idx * rowH;
+        const mOff = this.getMetricItemOffsets(config, widgetKey, m.key);
+        if (mOff.item.hidden) return;
+        const ry = y + idx * rowH + mOff.item.y;
+        const rx = x + mOff.item.x;
         if (idx > 0) {
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.moveTo(x + 16, ry);
-          ctx.lineTo(x + width - 16, ry);
-          ctx.stroke();
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
+          ctx.beginPath(); ctx.moveTo(rx + 16, ry); ctx.lineTo(rx + width - 16, ry); ctx.stroke();
         }
 
-        // Left accent notch
         ctx.fillStyle = elAccent;
-        this.drawRoundedRect(ctx, x + 16, ry + (rowH - 14) / 2, 4, 14, 2);
-        ctx.fill();
+        ctx.beginPath(); ctx.arc(rx + 16, ry + rowH / 2, 2.5, 0, Math.PI * 2); ctx.fill();
 
-        // Label with icon
-        ctx.save();
-        this.applyZDepth(ctx, offLabel.z);
-        ctx.textAlign = 'left';
-        ctx.fillStyle = this.getSubPartColor(config, 'metrics', 'label', textMuted);
-        ctx.font = this.getSubPartFont(config, 'metrics', 'label', 'bold', 12);
-        ctx.letterSpacing = '0.5px';
-        const labelText = m.icon ? `${m.icon}  ${m.label.toUpperCase()}` : m.label.toUpperCase();
-        ctx.fillText(labelText, x + 28 + offLabel.x, ry + rowH / 2 + 5 + offLabel.y);
-        ctx.restore();
+        if (!mOff.label.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.label.z);
+          ctx.textAlign = 'left';
+          ctx.fillStyle = mOff.label.color !== 'default' ? mOff.label.color : textMuted;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'label', 'bold', 10);
+          const labelText = m.icon ? `${m.icon} ${m.label}`.toUpperCase() : m.label.toUpperCase();
+          ctx.fillText(labelText, rx + 28 + mOff.label.x, ry + rowH / 2 + 5 + mOff.label.y);
+          ctx.restore();
+        }
 
-        // Right value
-        ctx.save();
-        this.applyZDepth(ctx, offVal.z);
-        ctx.textAlign = 'right';
-        ctx.fillStyle = this.getSubPartColor(config, 'metrics', 'val', text);
-        ctx.font = this.getSubPartFont(config, 'metrics', 'val', 'bold', 18);
-        ctx.fillText(m.val, x + width - 18 + offVal.x, ry + rowH / 2 + 6 + offVal.y);
-        ctx.restore();
+        if (!mOff.val.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.val.z);
+          ctx.textAlign = 'right';
+          ctx.fillStyle = mOff.val.color !== 'default' ? mOff.val.color : text;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'val', 'bold', 14);
+          ctx.fillText(m.val, rx + width - 18 + mOff.val.x, ry + rowH / 2 + 6 + mOff.val.y);
+          ctx.restore();
+        }
       });
 
       ctx.restore();
@@ -3230,55 +4513,63 @@ export class OverlayRenderer {
     }
 
     if (design === 'vertical-pill-stack') {
-      // Style: Vertical Capsule Pills (Floating pill cards with circular icon badge & prominent values)
       const vertCount = Math.min(displayMetrics.length, 6);
-      const pillGap = 8;
-      const pillH = Math.max(38, Math.floor(((customH || (vertCount * 48 + (vertCount - 1) * pillGap)) - (vertCount - 1) * pillGap) / vertCount));
+      const pillH = 38;
+      const pillGap = 6;
       const totalH = vertCount * pillH + (vertCount - 1) * pillGap;
-      this.recordBounds('metrics', 'Secondary Metrics', x, y, width, totalH);
+      this.recordBounds(widgetKey, 'Secondary Metrics', x, y, width, totalH);
 
       displayMetrics.slice(0, vertCount).forEach((m, idx) => {
-        const py = y + idx * (pillH + pillGap);
-        this.drawRoundedRect(ctx, x, py, width, pillH, pillH / 2);
-        ctx.fillStyle = cardStyle === 'solid' ? '#14141e' : 'rgba(20, 24, 34, 0.82)';
+        const mOff = this.getMetricItemOffsets(config, widgetKey, m.key);
+        if (mOff.item.hidden) return;
+        const py = y + idx * (pillH + pillGap) + mOff.item.y;
+        const px = x + mOff.item.x;
+
+        ctx.save();
+        this.applyZDepth(ctx, mOff.item.z);
+        this.drawRoundedRect(ctx, px, py, width, pillH, pillH / 2);
+        ctx.fillStyle = cardStyle === 'solid' ? '#141824' : 'rgba(20, 24, 36, 0.85)';
         ctx.fill();
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
         ctx.lineWidth = 1;
         ctx.stroke();
 
-        // Left circular icon badge
-        const badgeRadius = Math.max(12, pillH / 2 - 5);
-        const badgeCx = x + 8 + badgeRadius;
+        const badgeRadius = 12;
+        const badgeCx = px + 20;
         const badgeCy = py + pillH / 2;
         ctx.beginPath();
         ctx.arc(badgeCx, badgeCy, badgeRadius, 0, Math.PI * 2);
         ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
         ctx.fill();
         ctx.strokeStyle = elAccent;
-        ctx.lineWidth = 1.2;
+        ctx.lineWidth = 1;
         ctx.stroke();
 
         ctx.textAlign = 'center';
-        ctx.font = '12px sans-serif';
-        ctx.fillText(m.icon || '⚡', badgeCx, badgeCy + 4);
-
-        // Center-left label
-        ctx.save();
-        this.applyZDepth(ctx, offLabel.z);
-        ctx.textAlign = 'left';
-        ctx.fillStyle = this.getSubPartColor(config, 'metrics', 'label', textMuted);
-        ctx.font = this.getSubPartFont(config, 'metrics', 'label', 'bold', 11);
-        ctx.fillText(m.label.toUpperCase(), badgeCx + badgeRadius + 10 + offLabel.x, py + pillH / 2 + 4 + offLabel.y);
+        ctx.fillStyle = elAccent;
+        ctx.font = 'bold 11px sans-serif';
+        ctx.fillText(m.icon || '●', badgeCx, badgeCy + 4);
         ctx.restore();
 
-        // Right value
-        ctx.save();
-        this.applyZDepth(ctx, offVal.z);
-        ctx.textAlign = 'right';
-        ctx.fillStyle = this.getSubPartColor(config, 'metrics', 'val', elAccent);
-        ctx.font = this.getSubPartFont(config, 'metrics', 'val', 'bold', 16);
-        ctx.fillText(m.val, x + width - 18 + offVal.x, py + pillH / 2 + 5 + offVal.y);
-        ctx.restore();
+        if (!mOff.label.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.label.z);
+          ctx.textAlign = 'left';
+          ctx.fillStyle = mOff.label.color !== 'default' ? mOff.label.color : textMuted;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'label', 'bold', 10);
+          ctx.fillText(m.label.toUpperCase(), badgeCx + badgeRadius + 10 + mOff.label.x, py + pillH / 2 + 4 + mOff.label.y);
+          ctx.restore();
+        }
+
+        if (!mOff.val.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.val.z);
+          ctx.textAlign = 'right';
+          ctx.fillStyle = mOff.val.color !== 'default' ? mOff.val.color : text;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'val', 'bold', 15);
+          ctx.fillText(m.val, px + width - 18 + mOff.val.x, py + pillH / 2 + 5 + mOff.val.y);
+          ctx.restore();
+        }
       });
 
       ctx.restore();
@@ -3286,61 +4577,67 @@ export class OverlayRenderer {
     }
 
     if (design === 'vertical-timeline-flow') {
-      // Style: Vertical Telemetry Timeline (Glowing vertical axis line with node points for each metric)
       const vertCount = Math.min(displayMetrics.length, 6);
-      const rowH = Math.max(40, Math.floor((customH || (vertCount * 46)) / vertCount));
+      const rowH = 46;
       const totalH = vertCount * rowH;
-      this.recordBounds('metrics', 'Secondary Metrics', x, y, width, totalH);
+      this.recordBounds(widgetKey, 'Secondary Metrics', x, y, width, totalH);
 
-      if (cardStyle !== 'floating' && !this.isTextOnly(config, 'metrics')) {
-        this.drawCardBackground(ctx, x, y, width, totalH, config, theme);
-      }
+      this.drawRoundedRect(ctx, x, y, width, totalH, 12);
+      ctx.fillStyle = cardStyle === 'solid' ? '#0d1117' : 'rgba(13, 17, 23, 0.88)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
 
-      // Continuous vertical timeline wire
-      const axisX = x + 30;
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
-      ctx.lineWidth = 2;
+      const axisX = x + 32;
+
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+      ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.moveTo(axisX, y + 16);
-      ctx.lineTo(axisX, y + totalH - 16);
+      ctx.moveTo(axisX, y + 20);
+      ctx.lineTo(axisX, y + totalH - 20);
       ctx.stroke();
 
       displayMetrics.slice(0, vertCount).forEach((m, idx) => {
-        const ry = y + idx * rowH;
-        const nodeY = ry + rowH / 2;
+        const mOff = this.getMetricItemOffsets(config, widgetKey, m.key);
+        if (mOff.item.hidden) return;
+        const nodeY = y + idx * rowH + rowH / 2 + mOff.item.y;
 
-        // Glowing node ring
         ctx.save();
-        ctx.shadowColor = elAccent;
-        ctx.shadowBlur = 8;
+        this.applyZDepth(ctx, mOff.item.z);
         ctx.beginPath();
-        ctx.arc(axisX, nodeY, 6, 0, Math.PI * 2);
+        ctx.arc(axisX + mOff.item.x, nodeY, 6, 0, Math.PI * 2);
+        ctx.fillStyle = '#0d1117';
+        ctx.fill();
+        ctx.strokeStyle = elAccent;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(axisX + mOff.item.x, nodeY, 2.5, 0, Math.PI * 2);
         ctx.fillStyle = elAccent;
         ctx.fill();
-        ctx.beginPath();
-        ctx.arc(axisX, nodeY, 9, 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
         ctx.restore();
 
-        // Label above / beside
-        ctx.save();
-        this.applyZDepth(ctx, offLabel.z);
-        ctx.textAlign = 'left';
-        ctx.fillStyle = this.getSubPartColor(config, 'metrics', 'label', textMuted);
-        ctx.font = this.getSubPartFont(config, 'metrics', 'label', 'bold', 10);
-        ctx.fillText(`[ 0${idx + 1} ] // ${m.label.toUpperCase()}`, axisX + 18 + offLabel.x, nodeY - 4 + offLabel.y);
-        ctx.restore();
+        if (!mOff.label.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.label.z);
+          ctx.textAlign = 'left';
+          ctx.fillStyle = mOff.label.color !== 'default' ? mOff.label.color : elAccent;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'label', 'bold', 10);
+          ctx.fillText(`[ 0${idx + 1} ] // ${m.label.toUpperCase()}`, axisX + 18 + mOff.item.x + mOff.label.x, nodeY - 4 + mOff.label.y);
+          ctx.restore();
+        }
 
-        // Right value (large bold telemetry value)
-        ctx.save();
-        this.applyZDepth(ctx, offVal.z);
-        ctx.textAlign = 'left';
-        ctx.fillStyle = this.getSubPartColor(config, 'metrics', 'val', text);
-        ctx.font = this.getSubPartFont(config, 'metrics', 'val', 'bold', 18);
-        ctx.fillText(m.val, axisX + 18 + offVal.x, nodeY + 16 + offVal.y);
-        ctx.restore();
+        if (!mOff.val.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.val.z);
+          ctx.textAlign = 'left';
+          ctx.fillStyle = mOff.val.color !== 'default' ? mOff.val.color : text;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'val', 'bold', 15);
+          ctx.fillText(m.val, axisX + 18 + mOff.item.x + mOff.val.x, nodeY + 16 + mOff.val.y);
+          ctx.restore();
+        }
       });
 
       ctx.restore();
@@ -3348,59 +4645,54 @@ export class OverlayRenderer {
     }
 
     if (design === 'vertical-data-ladder') {
-      // Style: Vertical Telemetry Ladder (Stepped brackets, index indicators [01], mono labels, bold metrics)
       const vertCount = Math.min(displayMetrics.length, 6);
-      const rowH = Math.max(34, Math.floor((customH || (vertCount * 40)) / vertCount));
-      const totalH = vertCount * rowH;
-      this.recordBounds('metrics', 'Secondary Metrics', x, y, width, totalH);
-
-      if (cardStyle !== 'floating' && !this.isTextOnly(config, 'metrics')) {
-        this.drawCardBackground(ctx, x, y, width, totalH, config, theme);
-      }
+      const rowH = 36;
+      const rowGap = 4;
+      const totalH = vertCount * rowH + (vertCount - 1) * rowGap;
+      this.recordBounds(widgetKey, 'Secondary Metrics', x, y, width, totalH);
 
       displayMetrics.slice(0, vertCount).forEach((m, idx) => {
-        const ry = y + idx * rowH;
+        const mOff = this.getMetricItemOffsets(config, widgetKey, m.key);
+        if (mOff.item.hidden) return;
+        const ry = y + idx * (rowH + rowGap) + mOff.item.y;
+        const rx = x + mOff.item.x;
 
-        // Step index badge [01]
-        ctx.textAlign = 'left';
+        ctx.save();
+        this.applyZDepth(ctx, mOff.item.z);
+        this.drawRoundedRect(ctx, rx, ry, width, rowH, 6);
+        ctx.fillStyle = cardStyle === 'solid' ? '#10141d' : 'rgba(16, 20, 29, 0.85)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
         ctx.fillStyle = elAccent;
-        ctx.font = 'bold 11px monospace';
-        ctx.fillText(`[0${idx + 1}]`, x + 16, ry + rowH / 2 + 4);
-
-        // Metric label
-        ctx.save();
-        this.applyZDepth(ctx, offLabel.z);
-        ctx.textAlign = 'left';
-        ctx.fillStyle = this.getSubPartColor(config, 'metrics', 'label', textMuted);
-        ctx.font = this.getSubPartFont(config, 'metrics', 'label', 'bold', 11);
-        const lText = m.label.toUpperCase();
-        ctx.fillText(lText, x + 54 + offLabel.x, ry + rowH / 2 + 4 + offLabel.y);
-        const lWidth = ctx.measureText(lText).width;
+        this.drawRoundedRect(ctx, rx + 14, ry + 10, 28, rowH - 20, 3);
+        ctx.fill();
+        ctx.fillStyle = '#000000';
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 9px monospace';
+        ctx.fillText(`0${idx + 1}`, rx + 28, ry + rowH / 2 + 4);
         ctx.restore();
 
-        // Value text
-        ctx.save();
-        this.applyZDepth(ctx, offVal.z);
-        ctx.textAlign = 'right';
-        ctx.fillStyle = this.getSubPartColor(config, 'metrics', 'val', text);
-        ctx.font = this.getSubPartFont(config, 'metrics', 'val', 'bold', 17);
-        const vText = m.val;
-        const vWidth = ctx.measureText(vText).width;
-        ctx.fillText(vText, x + width - 16 + offVal.x, ry + rowH / 2 + 5 + offVal.y);
-        ctx.restore();
-
-        // Dotted leader line between label and value
-        const dotStart = x + 62 + lWidth;
-        const dotEnd = x + width - 24 - vWidth;
-        if (dotEnd > dotStart + 10) {
+        if (!mOff.label.hidden) {
           ctx.save();
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
-          ctx.lineWidth = 1;
-          ctx.setLineDash([2, 5]);
-          ctx.beginPath();
-          ctx.moveTo(dotStart, ry + rowH / 2 + 2);
-          ctx.lineTo(dotEnd, ry + rowH / 2 + 2);
-          ctx.stroke();
+          this.applyZDepth(ctx, mOff.label.z);
+          ctx.textAlign = 'left';
+          ctx.fillStyle = mOff.label.color !== 'default' ? mOff.label.color : textMuted;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'label', 'bold', 10);
+          const lText = m.icon ? `${m.icon} ${m.label}`.toUpperCase() : m.label.toUpperCase();
+          ctx.fillText(lText, rx + 54 + mOff.label.x, ry + rowH / 2 + 4 + mOff.label.y);
+          ctx.restore();
+        }
+
+        if (!mOff.val.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.val.z);
+          ctx.textAlign = 'right';
+          ctx.fillStyle = mOff.val.color !== 'default' ? mOff.val.color : elAccent;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'val', 'bold', 15);
+          ctx.fillText(m.val, rx + width - 16 + mOff.val.x, ry + rowH / 2 + 5 + mOff.val.y);
           ctx.restore();
         }
       });
@@ -3410,53 +4702,57 @@ export class OverlayRenderer {
     }
 
     if (design === 'vertical-athletic-cards') {
-      // Style: Vertical Athletic Cards (Stacked bordered cards with rank badges #1, #2, sub-labels, and bold numbers)
       const vertCount = Math.min(displayMetrics.length, 6);
-      const cardGap = 8;
-      const cardH_item = Math.max(42, Math.floor(((customH || (vertCount * 52 + (vertCount - 1) * cardGap)) - (vertCount - 1) * cardGap) / vertCount));
+      const cardH_item = 42;
+      const cardGap = 6;
       const totalH = vertCount * cardH_item + (vertCount - 1) * cardGap;
-      this.recordBounds('metrics', 'Secondary Metrics', x, y, width, totalH);
+      this.recordBounds(widgetKey, 'Secondary Metrics', x, y, width, totalH);
 
       displayMetrics.slice(0, vertCount).forEach((m, idx) => {
-        const cy = y + idx * (cardH_item + cardGap);
-        this.drawRoundedRect(ctx, x, cy, width, cardH_item, 8);
-        ctx.fillStyle = cardStyle === 'solid' ? '#12121a' : 'rgba(18, 18, 28, 0.85)';
+        const mOff = this.getMetricItemOffsets(config, widgetKey, m.key);
+        if (mOff.item.hidden) return;
+        const cy = y + idx * (cardH_item + cardGap) + mOff.item.y;
+        const cx = x + mOff.item.x;
+
+        ctx.save();
+        this.applyZDepth(ctx, mOff.item.z);
+        this.drawRoundedRect(ctx, cx, cy, width, cardH_item, 8);
+        ctx.fillStyle = cardStyle === 'solid' ? '#14141e' : 'rgba(20, 20, 30, 0.85)';
         ctx.fill();
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+        ctx.strokeStyle = elAccent;
         ctx.lineWidth = 1;
         ctx.stroke();
 
-        // Left accent bar
         ctx.fillStyle = elAccent;
-        this.drawRoundedRect(ctx, x + 2, cy + 6, 4, cardH_item - 12, 2);
+        this.drawRoundedRect(ctx, cx + 2, cy + 6, 5, cardH_item - 12, 2);
         ctx.fill();
 
-        // Rank pill badge `#01`
-        this.drawRoundedRect(ctx, x + 14, cy + (cardH_item - 22) / 2, 28, 22, 4);
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
-        ctx.fill();
-        ctx.textAlign = 'center';
-        ctx.fillStyle = elAccent;
-        ctx.font = 'bold 10px monospace';
-        ctx.fillText(`#0${idx + 1}`, x + 28, cy + (cardH_item - 22) / 2 + 15);
-
-        // Label
-        ctx.save();
-        this.applyZDepth(ctx, offLabel.z);
-        ctx.textAlign = 'left';
-        ctx.fillStyle = this.getSubPartColor(config, 'metrics', 'label', textMuted);
-        ctx.font = this.getSubPartFont(config, 'metrics', 'label', 'bold', 11);
-        ctx.fillText(m.label.toUpperCase(), x + 50 + offLabel.x, cy + cardH_item / 2 + 4 + offLabel.y);
+        if (m.icon) {
+          ctx.textAlign = 'center';
+          ctx.font = '14px sans-serif';
+          ctx.fillText(m.icon, cx + 26, cy + cardH_item / 2 + 5);
+        }
         ctx.restore();
 
-        // Value
-        ctx.save();
-        this.applyZDepth(ctx, offVal.z);
-        ctx.textAlign = 'right';
-        ctx.fillStyle = this.getSubPartColor(config, 'metrics', 'val', text);
-        ctx.font = this.getSubPartFont(config, 'metrics', 'val', 'bold', 18);
-        ctx.fillText(m.val, x + width - 16 + offVal.x, cy + cardH_item / 2 + 5 + offVal.y);
-        ctx.restore();
+        if (!mOff.label.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.label.z);
+          ctx.textAlign = 'left';
+          ctx.fillStyle = mOff.label.color !== 'default' ? mOff.label.color : textMuted;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'label', 'bold', 10);
+          ctx.fillText(m.label.toUpperCase(), cx + 50 + mOff.label.x, cy + cardH_item / 2 + 4 + mOff.label.y);
+          ctx.restore();
+        }
+
+        if (!mOff.val.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.val.z);
+          ctx.textAlign = 'right';
+          ctx.fillStyle = mOff.val.color !== 'default' ? mOff.val.color : text;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'val', 'bold', 16);
+          ctx.fillText(m.val, cx + width - 16 + mOff.val.x, cy + cardH_item / 2 + 5 + mOff.val.y);
+          ctx.restore();
+        }
       });
 
       ctx.restore();
@@ -3470,15 +4766,30 @@ export class OverlayRenderer {
       const colW = width / displayMetrics.length;
 
       displayMetrics.forEach((m, idx) => {
-        const cx = x + idx * colW + colW / 2;
-        ctx.textAlign = 'center';
-        ctx.fillStyle = this.getSubPartColor(config, 'metrics', 'label', textMuted);
-        ctx.font = this.getSubPartFont(config, 'metrics', 'label', '600', 12);
-        ctx.fillText(m.label, cx, y + 26);
+        const mOff = this.getMetricItemOffsets(config, widgetKey, m.key);
+        if (mOff.item.hidden) return;
+        const cx = x + idx * colW + colW / 2 + mOff.item.x;
+        const cy = y + mOff.item.y;
 
-        ctx.fillStyle = this.getSubPartColor(config, 'metrics', 'val', text);
-        ctx.font = this.getSubPartFont(config, 'metrics', 'val', 'bold', 22);
-        ctx.fillText(m.val, cx, y + 60);
+        if (!mOff.label.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.label.z);
+          ctx.textAlign = 'center';
+          ctx.fillStyle = mOff.label.color !== 'default' ? mOff.label.color : textMuted;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'label', '600', 12);
+          ctx.fillText(m.label, cx + mOff.label.x, cy + 26 + mOff.label.y);
+          ctx.restore();
+        }
+
+        if (!mOff.val.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.val.z);
+          ctx.textAlign = 'center';
+          ctx.fillStyle = mOff.val.color !== 'default' ? mOff.val.color : text;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'val', 'bold', 22);
+          ctx.fillText(m.val, cx + mOff.val.x, cy + 60 + mOff.val.y);
+          ctx.restore();
+        }
 
         if (idx < displayMetrics.length - 1) {
           ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
@@ -3498,22 +4809,40 @@ export class OverlayRenderer {
       const itemW = (width - cardGap * (displayMetrics.length - 1)) / displayMetrics.length;
 
       displayMetrics.forEach((m, idx) => {
-        const itemX = x + idx * (itemW + cardGap);
-        this.drawRoundedRect(ctx, itemX, y, itemW, cardH, 20);
+        const mOff = this.getMetricItemOffsets(config, widgetKey, m.key);
+        if (mOff.item.hidden) return;
+        const itemX = x + idx * (itemW + cardGap) + mOff.item.x;
+        const itemY = y + mOff.item.y;
+
+        ctx.save();
+        this.applyZDepth(ctx, mOff.item.z);
+        this.drawRoundedRect(ctx, itemX, itemY, itemW, cardH, 20);
         ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
         ctx.fill();
         ctx.strokeStyle = elAccent;
         ctx.lineWidth = 1;
         ctx.stroke();
+        ctx.restore();
 
-        ctx.textAlign = 'center';
-        ctx.fillStyle = elAccent;
-        ctx.font = this.getSubPartFont(config, 'metrics', 'label', 'bold', 11);
-        ctx.fillText(m.label, itemX + itemW / 2, y + 25);
+        if (!mOff.label.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.label.z);
+          ctx.textAlign = 'center';
+          ctx.fillStyle = mOff.label.color !== 'default' ? mOff.label.color : elAccent;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'label', 'bold', 11);
+          ctx.fillText(m.label, itemX + itemW / 2 + mOff.label.x, itemY + 25 + mOff.label.y);
+          ctx.restore();
+        }
 
-        ctx.fillStyle = text;
-        ctx.font = this.getSubPartFont(config, 'metrics', 'val', 'bold', 20);
-        ctx.fillText(m.val, itemX + itemW / 2, y + 57);
+        if (!mOff.val.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, mOff.val.z);
+          ctx.textAlign = 'center';
+          ctx.fillStyle = mOff.val.color !== 'default' ? mOff.val.color : text;
+          ctx.font = this.getMetricFont(config, widgetKey, m.key, 'val', 'bold', 20);
+          ctx.fillText(m.val, itemX + itemW / 2 + mOff.val.x, itemY + 57 + mOff.val.y);
+          ctx.restore();
+        }
       });
 
       ctx.restore();
@@ -3521,31 +4850,44 @@ export class OverlayRenderer {
     }
 
     // Default 'grid' & 'compact':
+    const effAlign = this.getWidgetAlign(align, 'center');
     const cardGap = 12;
     const itemW = (width - cardGap * (displayMetrics.length - 1)) / displayMetrics.length;
 
     displayMetrics.forEach((m, idx) => {
-      const itemX = x + idx * (itemW + cardGap);
+      const mOff = this.getMetricItemOffsets(config, widgetKey, m.key);
+      if (mOff.item.hidden) return;
+      const itemX = x + idx * (itemW + cardGap) + mOff.item.x;
+      const itemY = y + mOff.item.y;
+
       if (cardStyle !== 'floating') {
-        this.drawCardBackground(ctx, itemX, y, itemW, cardH, config, theme);
+        ctx.save();
+        this.applyZDepth(ctx, mOff.item.z);
+        this.drawCardBackground(ctx, itemX, itemY, itemW, cardH, config, theme);
+        ctx.restore();
+      }
+      const itemCx = effAlign === 'left' ? itemX + 16 : effAlign === 'right' ? itemX + itemW - 16 : itemX + itemW / 2;
+
+      if (!mOff.label.hidden) {
+        ctx.save();
+        this.applyZDepth(ctx, mOff.label.z);
+        ctx.textAlign = effAlign;
+        ctx.fillStyle = mOff.label.color !== 'default' ? mOff.label.color : textMuted;
+        ctx.font = this.getMetricFont(config, widgetKey, m.key, 'label', 'bold', 11);
+        ctx.letterSpacing = '0.5px';
+        ctx.fillText(m.label, itemCx + mOff.label.x, itemY + 26 + mOff.label.y);
+        ctx.restore();
       }
 
-      ctx.save();
-      this.applyZDepth(ctx, offLabel.z);
-      ctx.textAlign = 'center';
-      ctx.fillStyle = this.getSubPartColor(config, 'metrics', 'label', textMuted);
-      ctx.font = this.getSubPartFont(config, 'metrics', 'label', 'bold', 11);
-      ctx.letterSpacing = '0.5px';
-      ctx.fillText(m.label, itemX + itemW / 2 + offLabel.x, y + 26 + offLabel.y);
-      ctx.restore();
-
-      ctx.save();
-      this.applyZDepth(ctx, offVal.z);
-      ctx.textAlign = 'center';
-      ctx.fillStyle = this.getSubPartColor(config, 'metrics', 'val', text);
-      ctx.font = this.getSubPartFont(config, 'metrics', 'val', 'bold', 22);
-      ctx.fillText(m.val, itemX + itemW / 2 + offVal.x, y + 58 + offVal.y);
-      ctx.restore();
+      if (!mOff.val.hidden) {
+        ctx.save();
+        this.applyZDepth(ctx, mOff.val.z);
+        ctx.textAlign = effAlign;
+        ctx.fillStyle = mOff.val.color !== 'default' ? mOff.val.color : text;
+        ctx.font = this.getMetricFont(config, widgetKey, m.key, 'val', 'bold', 22);
+        ctx.fillText(m.val, itemCx + mOff.val.x, itemY + 58 + mOff.val.y);
+        ctx.restore();
+      }
     });
 
     ctx.restore();
@@ -3553,70 +4895,188 @@ export class OverlayRenderer {
   }
 
   // =========================================================================
-  // WIDGET 5: SPLITS BAR CHART
-  // Designs: 'vertical-bars', 'horizontal-bars', 'speed-dots', 'pace-table', 'split-bubbles'
-  // =========================================================================
-  drawSplitsBarChart(ctx, x, y, width, activity, config, theme, accent, chartH = 150) {
+  drawSplitsBarChart(ctx, x, y, width, activity, config, theme, accent, chartH = 150, widgetKey = 'splits') {
     const isLapSource = config.splitDataSource === 'laps' && activity.hasLaps;
     const items = isLapSource ? activity.laps : activity.splits;
 
     if (!items || items.length === 0) return y;
 
     ctx.save();
-    const elStyle = this.getElementStyle(config, 'splits');
-    const { text, textMuted, accent: elAccent, cardStyle, align, opacity } = this.getEffectiveColors(config, theme, accent, 'splits');
+    const elStyle = this.getElementStyle(config, widgetKey);
+    const { text, textMuted, accent: elAccent, cardStyle, align, opacity } = this.getEffectiveColors(config, theme, accent, widgetKey);
     if (opacity < 1) ctx.globalAlpha = opacity;
     accent = elAccent;
 
     const font = this.getFontFamily(elStyle.fontFamily !== 'default' ? elStyle.fontFamily : config.fontFamily);
     const design = config.splitsDesign || 'vertical-bars';
-    this.recordBounds('splits', 'Splits Chart', x, y, width, chartH);
 
-    if (cardStyle !== 'floating') {
-      this.drawWidgetCardBg(ctx, 'splits', x, y, width, chartH, config, theme);
-    }
+    this.recordBounds(widgetKey, 'Splits Chart', x, y, width, chartH);
+    this.drawWidgetCardBg(ctx, widgetKey, x, y, width, chartH, config, theme);
 
-    const offTitle = this.getElementOffset(config, 'splits', 'title');
-    const offBadge = this.getElementOffset(config, 'splits', 'badge');
-    const offTable = this.getElementOffset(config, 'splits', 'table');
+    const padX = 16;
+    const titleY = y + 24;
 
-    const padX = 20;
-    const titleY = y + 26;
-    const defaultTitle = isLapSource ? `WORKOUT LAPS (${items.length} TOTAL)` : `SPLITS (${activity.splitDistanceMeters ? (activity.splitDistanceMeters / 1000) + 'KM' : '1KM'} • ${items.length} TOTAL)`;
-    const chartTitle = this.getTextOverride(config, 'splits', 'title', config.splitCustomTitle || defaultTitle);
+    const offTitle = this.getElementOffset(config, widgetKey, 'title');
+    const offBadge = this.getElementOffset(config, widgetKey, 'badge');
+    const offTable = this.getElementOffset(config, widgetKey, 'table');
+    const offLapLabels = this.getElementOffset(config, widgetKey, 'lapLabels');
+    const offPaceLabels = this.getElementOffset(config, widgetKey, 'paceLabels');
+    const offBars = this.getElementOffset(config, widgetKey, 'bars');
+
+    const defaultTitle = isLapSource ? 'MANUAL LAPS & SEGMENTS' : (activity.isAnimated && activity.progress < 0.999 ? 'ACTIVE SEGMENT PROGRESS' : 'KILOMETER SPLITS');
+    const chartTitle = this.getTextOverride(config, widgetKey, 'title', defaultTitle);
 
     if (!offTitle.hidden && chartTitle) {
+      ctx.save();
       this.applyZDepth(ctx, offTitle.z);
       ctx.textAlign = 'left';
-      ctx.fillStyle = textMuted;
-      ctx.font = this.getSubPartFont(config, 'splits', 'title', 'bold', 13);
+      ctx.fillStyle = offTitle.color !== 'default' ? offTitle.color : textMuted;
+      ctx.font = this.getSubPartFont(config, widgetKey, 'title', 'bold', 13);
       ctx.letterSpacing = '1px';
       ctx.fillText(chartTitle, x + padX + offTitle.x, titleY + offTitle.y);
+      ctx.restore();
     }
 
-    const showFastest = config.splitHighlightFastest !== false;
-    const fastest = showFastest ? items.find((it) => it.isFastest) : null;
-    if (fastest && !offBadge.hidden) {
+    const fastest = isLapSource ? null : activity.fastestSplit;
+    const showFastest = config.splitsShowFastest !== false;
+
+    if (fastest && showFastest && !offBadge.hidden) {
+      ctx.save();
       this.applyZDepth(ctx, offBadge.z);
       ctx.textAlign = 'right';
-      ctx.fillStyle = elAccent;
-      ctx.font = this.getSubPartFont(config, 'splits', 'badge', 'bold', 12);
-      ctx.fillText(`⚡ FASTEST: ${fastest.shortName} (${fastest.paceFormatted.split(' ')[0]})`, x + width - padX + offBadge.x, titleY + offBadge.y);
+      ctx.fillStyle = offBadge.color !== 'default' ? offBadge.color : elAccent;
+      ctx.font = this.getSubPartFont(config, widgetKey, 'badge', 'bold', 12);
+      const defaultBadge = `⚡ FASTEST: ${fastest.shortName} (${fastest.paceFormatted.split(' ')[0]})`;
+      const badgeText = this.getTextOverride(config, widgetKey, 'fastestBadge', defaultBadge);
+      ctx.fillText(badgeText, x + width - padX + offBadge.x, titleY + offBadge.y);
+      ctx.restore();
     }
 
-    if (offTable.hidden) {
+    const visibleSplits = items.slice(0, 10);
+    const count = visibleSplits.length;
+
+    if (design === 'centered-split-ladder') {
+      const rowH = Math.max(24, Math.min(36, Math.floor((chartH - 45) / count)));
+      const startY = y + 42;
+      const midX = x + width / 2;
+
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(midX, startY);
+      ctx.lineTo(midX, startY + count * rowH - 8);
+      ctx.stroke();
+
+      visibleSplits.forEach((it, idx) => {
+        const sOff = this.getSplitItemOffsets(config, widgetKey, idx);
+        if (sOff.split.hidden) return;
+        const sy = startY + idx * rowH + rowH / 2 + sOff.split.y;
+        const isFastest = it.isFastest && showFastest;
+
+        if (!sOff.bar.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, sOff.bar.z);
+          ctx.beginPath();
+          ctx.arc(midX + sOff.bar.x, sy + sOff.bar.y, isFastest ? 5 : 3.5, 0, Math.PI * 2);
+          ctx.fillStyle = sOff.bar.color !== 'default' ? sOff.bar.color : (isFastest ? elAccent : 'rgba(255, 255, 255, 0.3)');
+          ctx.fill();
+          if (isFastest) {
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+
+        if (!sOff.lap.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, sOff.lap.z);
+          ctx.textAlign = 'right';
+          ctx.fillStyle = sOff.lap.color !== 'default' ? sOff.lap.color : textMuted;
+          ctx.font = this.getSplitFont(config, widgetKey, idx, 'lap', 'bold', 12);
+          ctx.fillText(it.name || it.shortName, midX - 16 + sOff.lap.x, sy + 4 + sOff.lap.y);
+          ctx.restore();
+        }
+
+        if (!sOff.pace.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, sOff.pace.z);
+          ctx.textAlign = 'left';
+          ctx.fillStyle = sOff.pace.color !== 'default' ? sOff.pace.color : (isFastest ? elAccent : text);
+          ctx.font = this.getSplitFont(config, widgetKey, idx, 'pace', 'bold', 14);
+          const fastestMark = isFastest ? ' ⚡' : '';
+          ctx.fillText(`${it.paceFormatted.split(' ')[0]} /km${fastestMark}`, midX + 16 + sOff.pace.x, sy + 4 + sOff.pace.y);
+          ctx.restore();
+        }
+      });
+
+      ctx.restore();
+      return y + chartH;
+    }
+
+    if (design === 'centered-split-pills') {
+      const isTwoCol = count >= 6 && width > 420;
+      const cols = isTwoCol ? 2 : 1;
+      const rows = Math.ceil(count / cols);
+      const pillGap = 8;
+      const pillH = Math.max(30, Math.min(38, Math.floor((chartH - 45 - (rows - 1) * pillGap) / rows)));
+      const pillW = isTwoCol ? (width - padX * 2 - pillGap) / 2 : (width - padX * 2);
+
+      visibleSplits.forEach((it, idx) => {
+        const sOff = this.getSplitItemOffsets(config, widgetKey, idx);
+        if (sOff.split.hidden) return;
+        const c = idx % cols;
+        const r = Math.floor(idx / cols);
+        const pillX = x + padX + c * (pillW + pillGap) + sOff.split.x;
+        const py = y + 40 + r * (pillH + pillGap) + sOff.split.y;
+        const isFastest = it.isFastest && showFastest;
+
+        if (!sOff.bar.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, sOff.bar.z);
+          this.drawRoundedRect(ctx, pillX + sOff.bar.x, py + sOff.bar.y, pillW, pillH, pillH / 2);
+          ctx.fillStyle = sOff.bar.color !== 'default' ? sOff.bar.color : (isFastest ? 'rgba(255, 255, 255, 0.12)' : 'rgba(255, 255, 255, 0.05)');
+          ctx.fill();
+          ctx.strokeStyle = isFastest ? elAccent : 'rgba(255, 255, 255, 0.1)';
+          ctx.lineWidth = isFastest ? 1.5 : 1;
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        if (!sOff.lap.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, sOff.lap.z);
+          ctx.textAlign = 'left';
+          ctx.fillStyle = sOff.lap.color !== 'default' ? sOff.lap.color : textMuted;
+          ctx.font = this.getSplitFont(config, widgetKey, idx, 'lap', 'bold', 11);
+          ctx.fillText(it.name || it.shortName, pillX + 16 + sOff.lap.x, py + pillH / 2 + 4 + sOff.lap.y);
+          ctx.restore();
+        }
+
+        if (!sOff.pace.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, sOff.pace.z);
+          ctx.textAlign = 'right';
+          ctx.fillStyle = sOff.pace.color !== 'default' ? sOff.pace.color : (isFastest ? elAccent : text);
+          ctx.font = this.getSplitFont(config, widgetKey, idx, 'pace', 'bold', 13);
+          const star = isFastest ? '★ ' : '';
+          ctx.fillText(`${star}${it.paceFormatted.split(' ')[0]} /km`, pillX + pillW - 16 + sOff.pace.x, py + pillH / 2 + 4 + sOff.pace.y);
+          ctx.restore();
+        }
+      });
+
       ctx.restore();
       return y + chartH;
     }
 
     if (design === 'speed-dots') {
-      // Style 3: Connected Pace Dots (Displays ALL splits)
-      const dotAreaY = y + 45;
+      const dotAreaY = y + 42;
       const dotAreaH = chartH - 70;
       const dotAreaW = width - padX * 2;
+      const isAnim = activity.isAnimated && items.some((it) => it.isCompleted !== undefined);
 
       let minP = Infinity, maxP = 0;
-      items.forEach((it) => {
+      visibleSplits.forEach((it) => {
         if (it.pace > 0) {
           if (it.pace < minP) minP = it.pace;
           if (it.pace > maxP) maxP = it.pace;
@@ -3625,65 +5085,59 @@ export class OverlayRenderer {
       if (minP === Infinity) minP = 240;
       if (maxP <= minP) maxP = minP + 60;
 
-      const isAnim = activity.isAnimated && items.some((it) => it.isCompleted !== undefined);
-      const stepX = dotAreaW / Math.max(1, items.length - 1);
+      const dotGap = dotAreaW / (visibleSplits.length - 1 || 1);
+      const points = [];
 
-      // Background path (dim if animating, full accent if static)
-      ctx.beginPath();
-      items.forEach((it, idx) => {
-        const dx = x + padX + idx * stepX;
-        const dy = dotAreaY + (it.pace - minP) / (maxP - minP || 1) * dotAreaH;
-        if (idx === 0) ctx.moveTo(dx, dy);
-        else ctx.lineTo(dx, dy);
+      visibleSplits.forEach((it, idx) => {
+        const sOff = this.getSplitItemOffsets(config, widgetKey, idx);
+        const dx = x + padX + idx * dotGap + sOff.split.x;
+        const norm = 1 - (it.pace - minP) / (maxP - minP || 1);
+        const dy = dotAreaY + (1 - norm) * dotAreaH + sOff.split.y;
+        points.push({ x: dx, y: dy, it, isFastest: it.isFastest && showFastest, sOff, idx });
       });
-      ctx.strokeStyle = isAnim ? 'rgba(255, 255, 255, 0.15)' : elAccent;
-      ctx.lineWidth = 2.5;
+
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      points.forEach((p, i) => {
+        if (i === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      });
       ctx.stroke();
 
-      // Active completed line up to current segment
-      if (isAnim) {
-        ctx.beginPath();
-        let started = false;
-        items.forEach((it, idx) => {
-          if (it.isCompleted || it.isCurrent) {
-            const dx = x + padX + idx * stepX;
-            const dy = dotAreaY + (it.pace - minP) / (maxP - minP || 1) * dotAreaH;
-            if (!started) { ctx.moveTo(dx, dy); started = true; }
-            else ctx.lineTo(dx, dy);
-          }
-        });
-        if (started) {
-          ctx.strokeStyle = elAccent;
-          ctx.lineWidth = 3;
+      points.forEach((p) => {
+        if (p.sOff.split.hidden) return;
+        if (!p.sOff.bar.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, p.sOff.bar.z);
+          ctx.beginPath();
+          ctx.arc(p.x + p.sOff.bar.x, p.y + p.sOff.bar.y, p.isFastest ? 6 : 4, 0, Math.PI * 2);
+          ctx.fillStyle = p.sOff.bar.color !== 'default' ? p.sOff.bar.color : (p.isFastest ? elAccent : text);
+          ctx.fill();
+          ctx.strokeStyle = '#14141d';
+          ctx.lineWidth = 2;
           ctx.stroke();
-        }
-      }
-
-      // Draw dots and labels
-      const labelStep = items.length > 20 ? 4 : items.length > 10 ? 2 : 1;
-      items.forEach((it, idx) => {
-        const dx = x + padX + idx * stepX;
-        const dy = dotAreaY + (it.pace - minP) / (maxP - minP || 1) * dotAreaH;
-
-        if (isAnim && it.isPending) {
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
-          ctx.beginPath(); ctx.arc(dx, dy, 3, 0, Math.PI * 2); ctx.fill();
-        } else if (isAnim && it.isCurrent) {
-          ctx.fillStyle = elAccent;
-          ctx.shadowColor = elAccent;
-          ctx.shadowBlur = 10;
-          ctx.beginPath(); ctx.arc(dx, dy, 7, 0, Math.PI * 2); ctx.fill();
-          ctx.shadowBlur = 0;
-        } else {
-          ctx.fillStyle = it.isFastest && showFastest ? elAccent : text;
-          ctx.beginPath(); ctx.arc(dx, dy, it.isFastest && showFastest ? 6 : 4, 0, Math.PI * 2); ctx.fill();
+          ctx.restore();
         }
 
-        if (idx % labelStep === 0 || (it.isFastest && showFastest) || (isAnim && it.isCurrent) || idx === items.length - 1) {
+        if (!p.sOff.lap.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, p.sOff.lap.z);
           ctx.textAlign = 'center';
-          ctx.fillStyle = (isAnim && it.isCurrent) ? elAccent : (it.isFastest && showFastest ? elAccent : textMuted);
-          ctx.font = this.getSubPartFont(config, 'splits', 'table', 'bold', 10);
-          ctx.fillText(it.shortName, dx, dotAreaY + dotAreaH + 16);
+          ctx.fillStyle = p.sOff.lap.color !== 'default' ? p.sOff.lap.color : (p.isFastest ? elAccent : textMuted);
+          ctx.font = this.getSplitFont(config, widgetKey, p.idx, 'lap', '600', 10);
+          ctx.fillText(p.it.shortName, p.x + p.sOff.lap.x, dotAreaY + dotAreaH + 16 + p.sOff.lap.y);
+          ctx.restore();
+        }
+
+        if (!p.sOff.pace.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, p.sOff.pace.z);
+          ctx.textAlign = 'center';
+          ctx.fillStyle = p.sOff.pace.color !== 'default' ? p.sOff.pace.color : (p.isFastest ? elAccent : text);
+          ctx.font = this.getSplitFont(config, widgetKey, p.idx, 'pace', 'bold', 10);
+          ctx.fillText(p.it.paceFormatted.split(' ')[0], p.x + p.sOff.pace.x, p.y - 10 + p.sOff.pace.y);
+          ctx.restore();
         }
       });
 
@@ -3692,258 +5146,118 @@ export class OverlayRenderer {
     }
 
     if (design === 'pace-delta-bars') {
-      // Style 6: Bi-directional +/- Delta Bar Equalizer
-      const count = items.length;
-      const avgPace = activity.avgPace || 0;
-      const isCustomPos = config.widgetPositions && config.widgetPositions['splits'];
-      const effectiveH = isCustomPos ? chartH : Math.max(chartH, Math.min(460, 56 + count * 22));
-      const isAnim = activity.isAnimated && items.some((it) => it.isCompleted !== undefined);
-      this.recordBounds('splits', 'Splits Chart', x, y, width, effectiveH);
+      const isAnim = activity.isAnimated && visibleSplits.some((it) => it.isCompleted !== undefined);
+      const rowH = Math.max(20, Math.min(28, Math.floor((chartH - 45) / count)));
+      const startY = y + 42;
+      const barH = rowH - 6;
 
-      if (!isCustomPos && cardStyle !== 'floating') {
-        ctx.clearRect(x, y, width, effectiveH);
-        this.drawCardBackground(ctx, x, y, width, effectiveH, config, theme);
-        ctx.textAlign = 'left';
-        ctx.fillStyle = textMuted;
-        ctx.font = this.getSubPartFont(config, 'splits', 'title', 'bold', 13);
-        ctx.letterSpacing = '1px';
-        ctx.fillText(chartTitle, x + padX + offTitle.x, titleY + offTitle.y);
-        if (fastest) {
+      visibleSplits.forEach((it, idx) => {
+        const sOff = this.getSplitItemOffsets(config, widgetKey, idx);
+        if (sOff.split.hidden) return;
+        const by = startY + idx * rowH + sOff.split.y;
+        const isFastest = it.isFastest && showFastest;
+
+        if (!sOff.bar.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, sOff.bar.z);
+          const barW = Math.max(10, width - padX * 2);
+          this.drawRoundedRect(ctx, x + padX + sOff.bar.x, by + sOff.bar.y, barW, barH, 4);
+          ctx.fillStyle = sOff.bar.color !== 'default' ? sOff.bar.color : (isFastest ? 'rgba(204, 255, 0, 0.15)' : 'rgba(255, 255, 255, 0.05)');
+          ctx.fill();
+          ctx.restore();
+        }
+
+        if (!sOff.lap.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, sOff.lap.z);
+          ctx.textAlign = 'left';
+          ctx.fillStyle = sOff.lap.color !== 'default' ? sOff.lap.color : (isFastest ? elAccent : textMuted);
+          ctx.font = this.getSplitFont(config, widgetKey, idx, 'lap', 'bold', 11);
+          ctx.fillText(it.shortName, x + padX + 8 + sOff.lap.x, by + barH / 2 + 4 + sOff.lap.y);
+          ctx.restore();
+        }
+
+        if (!sOff.pace.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, sOff.pace.z);
           ctx.textAlign = 'right';
-          ctx.fillStyle = elAccent;
-          ctx.font = this.getSubPartFont(config, 'splits', 'badge', 'bold', 12);
-          ctx.fillText(`⚡ FASTEST: ${fastest.shortName} (${fastest.paceFormatted.split(' ')[0]})`, x + width - padX + offBadge.x, titleY + offBadge.y);
-        }
-      }
-
-      const tableW = width - padX * 2;
-      const tableStartY = y + 46;
-      const availableH = effectiveH - 54;
-      const rowH = Math.min(22, Math.max(14, availableH / count));
-      const midX = x + padX + tableW * 0.62;
-      const maxBarSpan = tableW * 0.26;
-
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-      ctx.lineWidth = 1;
-      ctx.setLineDash([2, 2]);
-      ctx.beginPath();
-      ctx.moveTo(midX, tableStartY); ctx.lineTo(midX, tableStartY + count * rowH);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      items.forEach((it, idx) => {
-        const ry = tableStartY + idx * rowH;
-        const deltaSec = avgPace > 0 && it.pace > 0 ? Math.round(it.pace - avgPace) : 0;
-        const splitCustom = (config.splitCustomLabels && config.splitCustomLabels[it.index]) || it.name || ('Split ' + it.shortName);
-
-        if (isAnim && it.isCurrent) {
-          ctx.fillStyle = 'rgba(204, 255, 0, 0.12)';
-          ctx.fillRect(x + padX, ry, tableW, rowH);
-        }
-
-        ctx.textAlign = 'left';
-        ctx.fillStyle = (isAnim && it.isCurrent) ? elAccent : (it.isFastest && showFastest ? elAccent : (isAnim && it.isPending ? 'rgba(255, 255, 255, 0.3)' : text));
-        ctx.font = this.getSubPartFont(config, 'splits', 'table', 'bold', 11);
-        ctx.fillText(`${splitCustom}${(isAnim && it.isCurrent) ? ' 🏃 LIVE' : (it.isFastest && showFastest ? ' ⚡' : '')}`, x + padX, ry + rowH * 0.72);
-
-        ctx.textAlign = 'left';
-        ctx.fillStyle = (isAnim && it.isPending) ? 'rgba(255, 255, 255, 0.25)' : textMuted;
-        ctx.font = this.getSubPartFont(config, 'splits', 'table', '500', 11);
-        const paceStr = isAnim && it.isPending ? '--:--' : (isAnim && it.isCurrent && it.displayPaceFormatted ? it.displayPaceFormatted.split(' ')[0] : it.paceFormatted.split(' ')[0]);
-        ctx.fillText(paceStr, x + padX + 80, ry + rowH * 0.72);
-
-        if (!isAnim || !it.isPending) {
-          const rawBarLen = Math.min(maxBarSpan, Math.abs(deltaSec) * 3);
-          const barLen = isAnim && it.isCurrent ? Math.max(3, rawBarLen * (it.splitProgress || 0.1)) : rawBarLen;
-          if (deltaSec < 0) {
-            ctx.fillStyle = elAccent;
-            this.drawRoundedRect(ctx, midX - barLen, ry + 4, barLen, rowH - 8, 2);
-            ctx.fill();
-            ctx.textAlign = 'right';
-            ctx.fillText(`-${Math.abs(deltaSec)}s`, midX - barLen - 6, ry + rowH * 0.72);
-          } else if (deltaSec > 0) {
-            ctx.fillStyle = '#ff5555';
-            this.drawRoundedRect(ctx, midX, ry + 4, barLen, rowH - 8, 2);
-            ctx.fill();
-            ctx.textAlign = 'left';
-            ctx.fillText(`+${deltaSec}s`, midX + barLen + 6, ry + rowH * 0.72);
-          } else {
-            ctx.textAlign = 'center';
-            ctx.fillStyle = textMuted;
-            ctx.fillText('EVEN', midX, ry + rowH * 0.72);
-          }
+          ctx.fillStyle = sOff.pace.color !== 'default' ? sOff.pace.color : (isFastest ? elAccent : text);
+          ctx.font = this.getSplitFont(config, widgetKey, idx, 'pace', 'bold', 12);
+          const paceStr = it.paceFormatted.split(' ')[0];
+          ctx.fillText(`${paceStr} /km`, x + width - padX - 8 + sOff.pace.x, by + barH / 2 + 4 + sOff.pace.y);
+          ctx.restore();
         }
       });
 
       ctx.restore();
-      return y + effectiveH;
+      return y + chartH;
     }
 
     if (design === 'card-grid') {
-      // Style 7: Compact Multi-Card Split Tiles
-      const count = items.length;
-      const isCustomPos = config.widgetPositions && config.widgetPositions['splits'];
-      const cols = count <= 6 ? 2 : count <= 12 ? 3 : 4;
+      const cardGap = 8;
+      const cols = count > 5 ? 3 : 2;
       const rows = Math.ceil(count / cols);
-      const gap = 8;
-      const tileW = (width - padX * 2 - (cols - 1) * gap) / cols;
-      const tileH = 50;
-      const gridAreaY = y + 42;
-      const totalGridH = rows * (tileH + gap) + 48;
-      const effectiveH = isCustomPos ? chartH : Math.min(500, Math.max(chartH, totalGridH));
-      const isAnim = activity.isAnimated && items.some((it) => it.isCompleted !== undefined);
-      this.recordBounds('splits', 'Splits Chart', x, y, width, effectiveH);
+      const cardW = (width - padX * 2 - cardGap * (cols - 1)) / cols;
+      const cardH_item = Math.max(45, Math.floor((chartH - 45 - cardGap * (rows - 1)) / rows));
 
-      if (!isCustomPos && cardStyle !== 'floating') {
-        ctx.clearRect(x, y, width, effectiveH);
-        this.drawCardBackground(ctx, x, y, width, effectiveH, config, theme);
-        ctx.textAlign = 'left';
-        ctx.fillStyle = textMuted;
-        ctx.font = this.getSubPartFont(config, 'splits', 'title', 'bold', 13);
-        ctx.letterSpacing = '1px';
-        ctx.fillText(chartTitle, x + padX + offTitle.x, titleY + offTitle.y);
-        if (fastest) {
-          ctx.textAlign = 'right';
-          ctx.fillStyle = elAccent;
-          ctx.font = this.getSubPartFont(config, 'splits', 'badge', 'bold', 12);
-          ctx.fillText(`⚡ FASTEST: ${fastest.shortName} (${fastest.paceFormatted.split(' ')[0]})`, x + width - padX + offBadge.x, titleY + offBadge.y);
-        }
-      }
-
-      items.forEach((it, idx) => {
+      visibleSplits.forEach((it, idx) => {
+        const sOff = this.getSplitItemOffsets(config, widgetKey, idx);
+        if (sOff.split.hidden) return;
         const c = idx % cols;
         const r = Math.floor(idx / cols);
-        const tx = x + padX + c * (tileW + gap);
-        const ty = gridAreaY + r * (tileH + gap);
-        if (ty + tileH > y + effectiveH) return;
+        const tx = x + padX + c * (cardW + cardGap) + sOff.split.x;
+        const ty = y + 42 + r * (cardH_item + cardGap) + sOff.split.y;
+        const isFastest = it.isFastest && showFastest;
 
-        this.drawRoundedRect(ctx, tx, ty, tileW, tileH, 8);
-        if (isAnim && it.isPending) {
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.02)';
+        if (!sOff.bar.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, sOff.bar.z);
+          this.drawRoundedRect(ctx, tx + sOff.bar.x, ty + sOff.bar.y, cardW, cardH_item, 8);
+          ctx.fillStyle = sOff.bar.color !== 'default' ? sOff.bar.color : (isFastest ? 'rgba(204, 255, 0, 0.12)' : 'rgba(255, 255, 255, 0.05)');
           ctx.fill();
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+          ctx.strokeStyle = isFastest ? elAccent : 'rgba(255, 255, 255, 0.1)';
           ctx.lineWidth = 1;
           ctx.stroke();
-
-          ctx.textAlign = 'left';
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
-          ctx.font = this.getSubPartFont(config, 'splits', 'table', 'bold', 10);
-          ctx.fillText(`SPLIT ${it.shortName}`, tx + 8, ty + 18);
-
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
-          ctx.font = this.getSubPartFont(config, 'splits', 'table', 'bold', 15);
-          ctx.fillText('--:--', tx + 8, ty + 38);
-          return;
+          ctx.restore();
         }
 
-        if (isAnim && it.isCurrent) {
-          ctx.fillStyle = 'rgba(204, 255, 0, 0.14)';
-          ctx.fill();
-          ctx.strokeStyle = elAccent;
-          ctx.lineWidth = 1.5;
-          ctx.shadowColor = elAccent;
-          ctx.shadowBlur = 8;
-          ctx.stroke();
-          ctx.shadowBlur = 0;
-
+        if (!sOff.lap.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, sOff.lap.z);
           ctx.textAlign = 'left';
-          ctx.fillStyle = elAccent;
-          ctx.font = this.getSubPartFont(config, 'splits', 'table', 'bold', 10);
-          ctx.fillText(`SPLIT ${it.shortName} ● LIVE`, tx + 8, ty + 18);
-
-          ctx.fillStyle = '#ffffff';
-          ctx.font = this.getSubPartFont(config, 'splits', 'table', 'bold', 15);
-          ctx.fillText((it.displayPaceFormatted || it.paceFormatted).split(' ')[0], tx + 8, ty + 38);
-
-          ctx.textAlign = 'right';
-          ctx.fillStyle = elAccent;
-          ctx.font = this.getSubPartFont(config, 'splits', 'table', 'bold', 11);
-          ctx.fillText(it.displayTimeFormatted, tx + tileW - 8, ty + 24);
-          if (it.avgHr) {
-            ctx.fillStyle = '#ef4444';
-            ctx.fillText(`${activity.liveHr || it.avgHr} bpm`, tx + tileW - 8, ty + 38);
-          }
-          return;
+          ctx.fillStyle = sOff.lap.color !== 'default' ? sOff.lap.color : textMuted;
+          ctx.font = this.getSplitFont(config, widgetKey, idx, 'lap', 'bold', 10);
+          ctx.fillText(`SPLIT ${it.shortName}`, tx + 8 + sOff.lap.x, ty + 16 + sOff.lap.y);
+          ctx.restore();
         }
 
-        ctx.fillStyle = it.isFastest && showFastest ? 'rgba(204, 255, 0, 0.12)' : 'rgba(255, 255, 255, 0.05)';
-        ctx.fill();
-        ctx.strokeStyle = it.isFastest && showFastest ? elAccent : 'rgba(255, 255, 255, 0.1)';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-
-        ctx.textAlign = 'left';
-        ctx.fillStyle = it.isFastest && showFastest ? elAccent : textMuted;
-        ctx.font = this.getSubPartFont(config, 'splits', 'table', 'bold', 10);
-        ctx.fillText(`SPLIT ${it.shortName}${it.isFastest && showFastest ? ' ⚡' : ''}`, tx + 8, ty + 18);
-
-        ctx.fillStyle = text;
-        ctx.font = this.getSubPartFont(config, 'splits', 'table', 'bold', 15);
-        ctx.fillText(it.paceFormatted.split(' ')[0], tx + 8, ty + 38);
-
-        ctx.textAlign = 'right';
-        ctx.fillStyle = textMuted;
-        ctx.font = this.getSubPartFont(config, 'splits', 'table', '500', 11);
-        ctx.fillText(it.timeFormatted, tx + tileW - 8, ty + 24);
-        if (it.avgHr) {
-          ctx.fillText(`${it.avgHr} bpm`, tx + tileW - 8, ty + 38);
+        if (!sOff.pace.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, sOff.pace.z);
+          ctx.textAlign = 'left';
+          ctx.fillStyle = sOff.pace.color !== 'default' ? sOff.pace.color : (isFastest ? elAccent : text);
+          ctx.font = this.getSplitFont(config, widgetKey, idx, 'pace', 'bold', 15);
+          ctx.fillText(it.paceFormatted.split(' ')[0], tx + 8 + sOff.pace.x, ty + cardH_item - 10 + sOff.pace.y);
+          ctx.restore();
         }
       });
 
       ctx.restore();
-      return y + effectiveH;
+      return y + chartH;
     }
 
     if (design === 'pace-table') {
-      // Style 4: Clean Single-Column Split Breakdown Table with customizable columns & +/- Delta
-      const count = items.length;
-      const avgPace = activity.avgPace || 0;
-      const isCustomPos = config.widgetPositions && config.widgetPositions['splits'];
-      const effectiveH = isCustomPos ? chartH : Math.max(chartH, Math.min(460, 56 + count * 22));
-      const isAnim = activity.isAnimated && items.some((it) => it.isCompleted !== undefined);
-
-      // Re-record bounding box with effective height
-      this.recordBounds('splits', 'Splits Chart', x, y, width, effectiveH);
-
-      // Card Background if dynamic height changed
-      if (!isCustomPos && cardStyle !== 'floating') {
-        ctx.clearRect(x, y, width, effectiveH);
-        this.drawWidgetCardBg(ctx, 'splits', x, y, width, effectiveH, config, theme);
-        // Redraw title
-        this.applyZDepth(ctx, offTitle.z);
-        ctx.textAlign = 'left';
-        ctx.fillStyle = textMuted;
-        ctx.font = this.getSubPartFont(config, 'splits', 'title', 'bold', 13);
-        ctx.letterSpacing = '1px';
-        ctx.fillText(chartTitle, x + padX + offTitle.x, titleY + offTitle.y);
-        if (fastest) {
-          this.applyZDepth(ctx, offBadge.z);
-          ctx.textAlign = 'right';
-          ctx.fillStyle = elAccent;
-          ctx.font = this.getSubPartFont(config, 'splits', 'badge', 'bold', 12);
-          ctx.fillText(`⚡ FASTEST: ${fastest.shortName} (${fastest.paceFormatted.split(' ')[0]})`, x + width - padX + offBadge.x, titleY + offBadge.y);
-        }
-      }
-
       const tableW = width - padX * 2;
       const headerY = y + 44 + offTable.y;
-
-      // Customizable columns configuration:
       const splitCols = config.splitColumns || { time: true, pace: true, delta: true };
       const colDefs = [
-        { key: 'split', title: this.getTextOverride(config, 'splits', 'headerSplit', 'SPLIT'), align: 'left', flex: 1.2 },
+        { key: 'split', title: this.getTextOverride(config, widgetKey, 'headerSplit', 'SPLIT'), align: 'left', flex: 1.2 },
       ];
-      if (splitCols.time !== false) colDefs.push({ key: 'time', title: this.getTextOverride(config, 'splits', 'headerTime', 'TIME'), align: 'center', flex: 1.0 });
-      if (splitCols.pace !== false) colDefs.push({ key: 'pace', title: this.getTextOverride(config, 'splits', 'headerPace', 'PACE'), align: 'right', flex: 1.0 });
-      if (splitCols.delta !== false) colDefs.push({ key: 'delta', title: this.getTextOverride(config, 'splits', 'headerDelta', '+/- DELTA'), align: 'right', flex: 1.0 });
-      if (splitCols.avgHr) colDefs.push({ key: 'avgHr', title: this.getTextOverride(config, 'splits', 'headerHr', 'AVG HR'), align: 'right', flex: 0.9 });
-      if (splitCols.maxHr) colDefs.push({ key: 'maxHr', title: this.getTextOverride(config, 'splits', 'headerMaxHr', 'MAX HR'), align: 'right', flex: 0.9 });
-      if (splitCols.minHr) colDefs.push({ key: 'minHr', title: this.getTextOverride(config, 'splits', 'headerMinHr', 'MIN HR'), align: 'right', flex: 0.9 });
-      if (splitCols.cadence) colDefs.push({ key: 'cadence', title: this.getTextOverride(config, 'splits', 'headerCad', 'CADENCE'), align: 'right', flex: 0.9 });
-      if (splitCols.elevation) colDefs.push({ key: 'elevation', title: this.getTextOverride(config, 'splits', 'headerElev', 'ELEV'), align: 'right', flex: 0.8 });
+      if (splitCols.time !== false) colDefs.push({ key: 'time', title: this.getTextOverride(config, widgetKey, 'headerTime', 'TIME'), align: 'center', flex: 1.0 });
+      if (splitCols.pace !== false) colDefs.push({ key: 'pace', title: this.getTextOverride(config, widgetKey, 'headerPace', 'PACE'), align: 'right', flex: 1.0 });
+      if (splitCols.delta !== false) colDefs.push({ key: 'delta', title: this.getTextOverride(config, widgetKey, 'headerDelta', '+/- DELTA'), align: 'right', flex: 1.0 });
 
       const totalFlex = colDefs.reduce((acc, c) => acc + c.flex, 0);
-
       let curColX = x + padX;
       const computedCols = colDefs.map((c) => {
         const cW = (c.flex / totalFlex) * tableW;
@@ -3953,223 +5267,108 @@ export class OverlayRenderer {
         return res;
       });
 
-      // Table Column Headers
       ctx.fillStyle = textMuted;
-      ctx.font = this.getSubPartFont(config, 'splits', 'table', '600', 10);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'table', '600', 10);
       ctx.letterSpacing = '0.5px';
       computedCols.forEach((col) => {
         ctx.textAlign = col.align;
         ctx.fillText(col.title, col.posX, headerY);
       });
 
-      // Subtle Divider
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(x + padX, headerY + 6);
-      ctx.lineTo(x + width - padX, headerY + 6);
-      ctx.stroke();
-
       const tableStartY = headerY + 12;
-      const availableH = effectiveH - (tableStartY - y) - 8;
+      const availableH = chartH - (tableStartY - y) - 8;
       const rowH = Math.min(22, Math.max(14, availableH / count));
-      const fontSize = Math.min(12, Math.max(9, Math.round(rowH * 0.58)));
 
-      items.forEach((it, idx) => {
-        const ry = tableStartY + idx * rowH;
-
-        if (isAnim && it.isCurrent) {
-          ctx.fillStyle = 'rgba(204, 255, 0, 0.12)';
-          ctx.fillRect(x + padX - 4, ry, tableW + 8, rowH);
-          ctx.strokeStyle = elAccent;
-          ctx.lineWidth = 1;
-          ctx.strokeRect(x + padX - 4, ry, tableW + 8, rowH);
-        } else if (idx % 2 === 1) {
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.025)';
-          ctx.fillRect(x + padX - 4, ry, tableW + 8, rowH);
-        }
-
-        const deltaSec = avgPace > 0 && it.pace > 0 ? Math.round(it.pace - avgPace) : 0;
-        let deltaStr = 'EVEN';
-        let deltaColor = textMuted;
-        if (isAnim && it.isPending) {
-          deltaStr = '--';
-        } else if (deltaSec < 0) {
-          const abs = Math.abs(deltaSec);
-          const m = Math.floor(abs / 60);
-          const s = abs % 60;
-          deltaStr = m > 0 ? `-${m}:${String(s).padStart(2, '0')}` : `-${s}s`;
-          deltaColor = elAccent;
-        } else if (deltaSec > 0) {
-          const m = Math.floor(deltaSec / 60);
-          const s = deltaSec % 60;
-          deltaStr = m > 0 ? `+${m}:${String(s).padStart(2, '0')}` : `+${s}s`;
-          deltaColor = '#ff5555';
-        }
-
-        const splitCustom = (config.splitCustomLabels && config.splitCustomLabels[it.index]) || it.name || ('Split ' + it.shortName);
+      visibleSplits.forEach((it, idx) => {
+        const sOff = this.getSplitItemOffsets(config, widgetKey, idx);
+        if (sOff.split.hidden) return;
+        const rowY = tableStartY + idx * rowH + rowH * 0.75 + sOff.split.y;
+        const isFastest = it.isFastest && showFastest;
 
         computedCols.forEach((col) => {
-          ctx.textAlign = col.align;
-          let cellText = '';
-          let cellColor = text;
-
-          if (isAnim && it.isPending) {
-            cellText = col.key === 'split' ? splitCustom : '--:--';
-            cellColor = 'rgba(255, 255, 255, 0.25)';
-          } else if (isAnim && it.isCurrent) {
-            switch (col.key) {
-              case 'split':
-                cellText = `${splitCustom} 🏃 LIVE`;
-                cellColor = elAccent;
-                break;
-              case 'time':
-                cellText = it.displayTimeFormatted || it.timeFormatted;
-                cellColor = elAccent;
-                break;
-              case 'pace':
-                cellText = (it.displayPaceFormatted || it.paceFormatted).split(' ')[0];
-                cellColor = elAccent;
-                break;
-              case 'delta':
-                cellText = deltaStr;
-                cellColor = deltaColor;
-                break;
-              case 'avgHr':
-                cellText = activity.liveHr ? `${activity.liveHr} bpm` : (it.avgHr ? `${it.avgHr} bpm` : '--');
-                cellColor = '#ef4444';
-                break;
-              case 'maxHr':
-                cellText = it.maxHr ? `${it.maxHr} bpm` : '--';
-                cellColor = text;
-                break;
-              case 'minHr':
-                cellText = it.minHr ? `${it.minHr} bpm` : '--';
-                cellColor = text;
-                break;
-              case 'cadence':
-                cellText = it.avgCadence ? `${it.avgCadence} spm` : '--';
-                cellColor = text;
-                break;
-              case 'elevation':
-                cellText = typeof it.elevationGain === 'number' ? `+${it.elevationGain}m` : '--';
-                cellColor = text;
-                break;
-            }
-          } else {
-            // Completed or standard view
-            switch (col.key) {
-              case 'split':
-                cellText = `${splitCustom}${it.isFastest && showFastest ? ' ⚡' : ''}`;
-                cellColor = it.isFastest && showFastest ? elAccent : text;
-                break;
-              case 'time':
-                cellText = it.timeFormatted;
-                cellColor = textMuted;
-                break;
-              case 'pace':
-                cellText = it.paceFormatted.split(' ')[0];
-                cellColor = it.isFastest && showFastest ? elAccent : text;
-                break;
-              case 'delta':
-                cellText = deltaStr;
-                cellColor = deltaColor;
-                break;
-              case 'avgHr':
-                cellText = it.avgHr ? `${it.avgHr} bpm` : '--';
-                cellColor = text;
-                break;
-              case 'maxHr':
-                cellText = it.maxHr ? `${it.maxHr} bpm` : '--';
-                cellColor = text;
-                break;
-              case 'minHr':
-                cellText = it.minHr ? `${it.minHr} bpm` : '--';
-                cellColor = text;
-                break;
-              case 'cadence':
-                cellText = it.avgCadence ? `${it.avgCadence} spm` : '--';
-                cellColor = text;
-                break;
-              case 'elevation':
-                cellText = typeof it.elevationGain === 'number' ? `+${it.elevationGain}m` : '--';
-                cellColor = text;
-                break;
-            }
+          if (col.key === 'split' && !sOff.lap.hidden) {
+            ctx.save();
+            this.applyZDepth(ctx, sOff.lap.z);
+            ctx.textAlign = col.align;
+            ctx.fillStyle = sOff.lap.color !== 'default' ? sOff.lap.color : (isFastest ? elAccent : textMuted);
+            ctx.font = this.getSplitFont(config, widgetKey, idx, 'lap', 'bold', 11);
+            ctx.fillText(it.name || it.shortName, col.posX + sOff.lap.x, rowY + sOff.lap.y);
+            ctx.restore();
+          } else if (col.key === 'pace' && !sOff.pace.hidden) {
+            ctx.save();
+            this.applyZDepth(ctx, sOff.pace.z);
+            ctx.textAlign = col.align;
+            ctx.fillStyle = sOff.pace.color !== 'default' ? sOff.pace.color : (isFastest ? elAccent : text);
+            ctx.font = this.getSplitFont(config, widgetKey, idx, 'pace', 'bold', 11);
+            ctx.fillText(it.paceFormatted.split(' ')[0], col.posX + sOff.pace.x, rowY + sOff.pace.y);
+            ctx.restore();
+          } else if (col.key === 'time') {
+            ctx.save();
+            ctx.textAlign = col.align;
+            ctx.fillStyle = text;
+            ctx.font = this.getSubPartFont(config, widgetKey, 'table', '500', 11);
+            ctx.fillText(it.durationFormatted || '--', col.posX, rowY);
+            ctx.restore();
+          } else if (col.key === 'delta') {
+            ctx.save();
+            ctx.textAlign = col.align;
+            ctx.fillStyle = isFastest ? elAccent : textMuted;
+            ctx.font = this.getSubPartFont(config, widgetKey, 'table', 'bold', 11);
+            ctx.fillText(it.deltaFormatted || '--', col.posX, rowY);
+            ctx.restore();
           }
-
-          ctx.fillStyle = cellColor;
-          ctx.font = this.getSubPartFont(config, 'splits', 'table', (col.key === 'time' ? '500' : 'bold'), fontSize);
-          ctx.fillText(cellText, col.posX, ry + rowH * 0.74);
         });
       });
 
       ctx.restore();
-      return y + effectiveH;
+      return y + chartH;
     }
 
     if (design === 'split-bubbles') {
-      // Style 5: Floating Rounded Split Bubbles (Displays ALL splits wrapped in rows)
-      const count = items.length;
-      const rows = count <= 8 ? 1 : count <= 16 ? 2 : 3;
-      const perRow = Math.ceil(count / rows);
-      const bubbleAreaY = y + 44;
-      const gap = 4;
-      const bubbleW = Math.min(54, (width - padX * 2 - (perRow - 1) * gap) / perRow);
-      const bubbleH = Math.min(48, (chartH - 56 - (rows - 1) * gap) / rows);
-      const isAnim = activity.isAnimated && items.some((it) => it.isCompleted !== undefined);
+      const bubbleAreaW = width - padX * 2;
+      const countB = visibleSplits.length;
+      const gapB = countB > 1 ? bubbleAreaW / (countB - 1) : 0;
+      const midY = y + 44 + (chartH - 50) / 2;
 
-      items.forEach((it, idx) => {
-        const row = Math.floor(idx / perRow);
-        const col = idx % perRow;
-        const bx = x + padX + col * (bubbleW + gap);
-        const by = bubbleAreaY + row * (bubbleH + gap);
+      visibleSplits.forEach((it, idx) => {
+        const sOff = this.getSplitItemOffsets(config, widgetKey, idx);
+        if (sOff.split.hidden) return;
+        const bx = x + padX + idx * gapB + sOff.split.x;
+        const by = midY + sOff.split.y;
+        const isFastest = it.isFastest && showFastest;
 
-        this.drawRoundedRect(ctx, bx, by, bubbleW, bubbleH, Math.min(12, bubbleH / 2));
-        if (isAnim && it.isPending) {
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+        if (!sOff.bar.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, sOff.bar.z);
+          ctx.beginPath();
+          ctx.arc(bx + sOff.bar.x, by + sOff.bar.y, isFastest ? 18 : 14, 0, Math.PI * 2);
+          ctx.fillStyle = sOff.bar.color !== 'default' ? sOff.bar.color : (isFastest ? elAccent : 'rgba(255, 255, 255, 0.08)');
           ctx.fill();
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
+          ctx.strokeStyle = isFastest ? '#ffffff' : 'rgba(255, 255, 255, 0.15)';
+          ctx.lineWidth = 1.5;
           ctx.stroke();
-
-          ctx.textAlign = 'center';
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
-          ctx.font = this.getSubPartFont(config, 'splits', 'table', 'bold', 10);
-          ctx.fillText(it.shortName, bx + bubbleW / 2, by + bubbleH * 0.38);
-
-          ctx.fillText('--:--', bx + bubbleW / 2, by + bubbleH * 0.82);
-          return;
+          ctx.restore();
         }
 
-        if (isAnim && it.isCurrent) {
-          ctx.fillStyle = elAccent;
-          ctx.shadowColor = elAccent;
-          ctx.shadowBlur = 10;
-          ctx.fill();
-          ctx.shadowBlur = 0;
-
+        if (!sOff.lap.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, sOff.lap.z);
           ctx.textAlign = 'center';
-          ctx.fillStyle = '#000000';
-          ctx.font = this.getSubPartFont(config, 'splits', 'table', 'bold', 10);
-          ctx.fillText(`${it.shortName} ●`, bx + bubbleW / 2, by + bubbleH * 0.38);
-
-          ctx.fillStyle = '#000000';
-          ctx.font = this.getSubPartFont(config, 'splits', 'table', 'bold', 11);
-          ctx.fillText((it.displayPaceFormatted || it.paceFormatted).split(' ')[0], bx + bubbleW / 2, by + bubbleH * 0.82);
-          return;
+          ctx.fillStyle = sOff.lap.color !== 'default' ? sOff.lap.color : textMuted;
+          ctx.font = this.getSplitFont(config, widgetKey, idx, 'lap', 'bold', 9);
+          ctx.fillText(it.shortName, bx + sOff.lap.x, by - 22 + sOff.lap.y);
+          ctx.restore();
         }
 
-        ctx.fillStyle = (it.isFastest && showFastest) ? elAccent : 'rgba(255, 255, 255, 0.08)';
-        ctx.fill();
-
-        ctx.textAlign = 'center';
-        ctx.fillStyle = (it.isFastest && showFastest) ? '#000000' : textMuted;
-        ctx.font = this.getSubPartFont(config, 'splits', 'table', 'bold', 10);
-        ctx.fillText(it.shortName, bx + bubbleW / 2, by + bubbleH * 0.38);
-
-        ctx.fillStyle = (it.isFastest && showFastest) ? '#000000' : text;
-        ctx.font = this.getSubPartFont(config, 'splits', 'table', 'bold', 11);
-        ctx.fillText(it.paceFormatted.split(' ')[0], bx + bubbleW / 2, by + bubbleH * 0.82);
+        if (!sOff.pace.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, sOff.pace.z);
+          ctx.textAlign = 'center';
+          ctx.fillStyle = sOff.pace.color !== 'default' ? sOff.pace.color : (isFastest ? '#000000' : text);
+          ctx.font = this.getSplitFont(config, widgetKey, idx, 'pace', 'bold', 10);
+          ctx.fillText(it.paceFormatted.split(' ')[0], bx + sOff.pace.x, by + 4 + sOff.pace.y);
+          ctx.restore();
+        }
       });
 
       ctx.restore();
@@ -4177,207 +5376,146 @@ export class OverlayRenderer {
     }
 
     if (design === 'vertical-split-cards') {
-      // Style: Vertical Split Cards (Stacked interval tiles with delta)
-      const count = Math.min(items.length, 8);
-      const isCustomPos = config.widgetPositions && config.widgetPositions['splits'];
       const cardGap = 6;
-      const availableH = chartH - 46;
-      const rowH = Math.max(26, Math.floor((availableH - (count - 1) * cardGap) / count));
-      const totalH = 46 + count * rowH + (count - 1) * cardGap;
-      const isAnim = activity.isAnimated && items.some((it) => it.isCompleted !== undefined);
-      this.recordBounds('splits', 'Splits Chart', x, y, width, totalH);
+      const countCards = Math.min(count, 5);
+      const singleH = Math.max(28, Math.floor((chartH - 45 - (countCards - 1) * cardGap) / countCards));
 
-      items.slice(0, count).forEach((it, idx) => {
-        const ry = y + 42 + idx * (rowH + cardGap);
-        this.drawRoundedRect(ctx, x + padX, ry, width - padX * 2, rowH, 6);
+      visibleSplits.slice(0, countCards).forEach((it, idx) => {
+        const sOff = this.getSplitItemOffsets(config, widgetKey, idx);
+        if (sOff.split.hidden) return;
+        const cx = x + padX + sOff.split.x;
+        const cy = y + 40 + idx * (singleH + cardGap) + sOff.split.y;
+        const isFastest = it.isFastest && showFastest;
 
-        if (isAnim && it.isPending) {
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.02)';
+        if (!sOff.bar.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, sOff.bar.z);
+          this.drawRoundedRect(ctx, cx + sOff.bar.x, cy + sOff.bar.y, width - padX * 2, singleH, 6);
+          ctx.fillStyle = sOff.bar.color !== 'default' ? sOff.bar.color : (isFastest ? 'rgba(204, 255, 0, 0.12)' : 'rgba(255, 255, 255, 0.05)');
           ctx.fill();
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
+          ctx.strokeStyle = isFastest ? elAccent : 'rgba(255, 255, 255, 0.08)';
           ctx.lineWidth = 1;
           ctx.stroke();
-
-          ctx.textAlign = 'left';
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
-          ctx.font = this.getSubPartFont(config, 'splits', 'table', 'bold', 11);
-          ctx.fillText(it.shortName, x + padX + 12, ry + rowH / 2 + 4);
-
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
-          ctx.fillText('--:--', x + padX + 70, ry + rowH / 2 + 4);
-
-          ctx.textAlign = 'right';
-          ctx.fillText('--:--', x + width - padX - 12, ry + rowH / 2 + 4);
-          return;
+          ctx.restore();
         }
 
-        if (isAnim && it.isCurrent) {
-          ctx.fillStyle = 'rgba(204, 255, 0, 0.12)';
-          ctx.fill();
-          ctx.strokeStyle = elAccent;
-          ctx.lineWidth = 1.5;
-          ctx.shadowColor = elAccent;
-          ctx.shadowBlur = 6;
-          ctx.stroke();
-          ctx.shadowBlur = 0;
-
+        if (!sOff.lap.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, sOff.lap.z);
           ctx.textAlign = 'left';
-          ctx.fillStyle = elAccent;
-          ctx.font = this.getSubPartFont(config, 'splits', 'table', 'bold', 11);
-          ctx.fillText(`${it.shortName} ● LIVE`, x + padX + 12, ry + rowH / 2 + 4);
-
-          ctx.fillStyle = elAccent;
-          ctx.font = '10px monospace';
-          ctx.fillText(it.displayTimeFormatted, x + padX + 90, ry + rowH / 2 + 4);
-
-          ctx.textAlign = 'right';
-          ctx.fillStyle = '#ffffff';
-          ctx.font = this.getSubPartFont(config, 'splits', 'table', 'bold', 12);
-          ctx.fillText((it.displayPaceFormatted || it.paceFormatted).split(' ')[0], x + width - padX - 12, ry + rowH / 2 + 4);
-          return;
+          ctx.fillStyle = sOff.lap.color !== 'default' ? sOff.lap.color : textMuted;
+          ctx.font = this.getSplitFont(config, widgetKey, idx, 'lap', 'bold', 11);
+          ctx.fillText(`SPLIT ${it.shortName}`, cx + 12 + sOff.lap.x, cy + singleH / 2 + 4 + sOff.lap.y);
+          ctx.restore();
         }
 
-        ctx.fillStyle = it.isFastest && showFastest ? 'rgba(204, 255, 0, 0.12)' : 'rgba(255, 255, 255, 0.04)';
-        ctx.fill();
-        ctx.strokeStyle = it.isFastest && showFastest ? elAccent : 'rgba(255, 255, 255, 0.08)';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-
-        ctx.textAlign = 'left';
-        ctx.fillStyle = it.isFastest && showFastest ? elAccent : text;
-        ctx.font = this.getSubPartFont(config, 'splits', 'table', 'bold', 11);
-        ctx.fillText(it.shortName, x + padX + 12, ry + rowH / 2 + 4);
-
-        ctx.fillStyle = textMuted;
-        ctx.font = '10px monospace';
-        ctx.fillText(it.timeFormatted || '', x + padX + 70, ry + rowH / 2 + 4);
-
-        ctx.textAlign = 'right';
-        ctx.fillStyle = it.isFastest && showFastest ? elAccent : text;
-        ctx.font = this.getSubPartFont(config, 'splits', 'table', 'bold', 12);
-        ctx.fillText(it.paceFormatted.split(' ')[0], x + width - padX - 12, ry + rowH / 2 + 4);
+        if (!sOff.pace.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, sOff.pace.z);
+          ctx.textAlign = 'right';
+          ctx.fillStyle = sOff.pace.color !== 'default' ? sOff.pace.color : (isFastest ? elAccent : text);
+          ctx.font = this.getSplitFont(config, widgetKey, idx, 'pace', 'bold', 12);
+          ctx.fillText(`${it.paceFormatted.split(' ')[0]} /km`, cx + width - padX * 2 - 12 + sOff.pace.x, cy + singleH / 2 + 4 + sOff.pace.y);
+          ctx.restore();
+        }
       });
 
       ctx.restore();
-      return y + totalH;
+      return y + chartH;
     }
 
     if (design === 'split-ladder-timeline') {
-      // Style: Vertical Route Timeline (Mile/KM Route Wire)
-      const count = Math.min(items.length, 8);
-      const rowH = Math.max(28, Math.floor((chartH - 46) / count));
-      const totalH = 46 + count * rowH;
-      const isAnim = activity.isAnimated && items.some((it) => it.isCompleted !== undefined);
-      this.recordBounds('splits', 'Splits Chart', x, y, width, totalH);
+      const countT = Math.min(count, 6);
+      const rowH = Math.max(22, Math.floor((chartH - 45) / countT));
+      const axisX = x + padX + 24;
 
-      const wireX = x + padX + 24;
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+      ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.moveTo(wireX, y + 42);
-      ctx.lineTo(wireX, y + totalH - 12);
+      ctx.moveTo(axisX, y + 42);
+      ctx.lineTo(axisX, y + 42 + countT * rowH - 8);
       ctx.stroke();
 
-      items.slice(0, count).forEach((it, idx) => {
-        const ry = y + 42 + idx * rowH + rowH / 2;
+      visibleSplits.slice(0, countT).forEach((it, idx) => {
+        const sOff = this.getSplitItemOffsets(config, widgetKey, idx);
+        if (sOff.split.hidden) return;
+        const nodeY = y + 42 + idx * rowH + rowH / 2 + sOff.split.y;
+        const isFastest = it.isFastest && showFastest;
 
-        if (isAnim && it.isPending) {
+        if (!sOff.bar.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, sOff.bar.z);
           ctx.beginPath();
-          ctx.arc(wireX, ry, 3, 0, Math.PI * 2);
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+          ctx.arc(axisX + sOff.bar.x, nodeY + sOff.bar.y, isFastest ? 5 : 3.5, 0, Math.PI * 2);
+          ctx.fillStyle = sOff.bar.color !== 'default' ? sOff.bar.color : (isFastest ? elAccent : 'rgba(255, 255, 255, 0.4)');
           ctx.fill();
-
-          ctx.textAlign = 'left';
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-          ctx.font = this.getSubPartFont(config, 'splits', 'table', 'bold', 11);
-          ctx.fillText(it.shortName, wireX + 14, ry + 4);
-
-          ctx.textAlign = 'right';
-          ctx.fillText('--:--', x + width - padX - 14, ry + 4);
-          return;
+          ctx.restore();
         }
 
-        if (isAnim && it.isCurrent) {
-          ctx.beginPath();
-          ctx.arc(wireX, ry, 6, 0, Math.PI * 2);
-          ctx.fillStyle = elAccent;
-          ctx.shadowColor = elAccent;
-          ctx.shadowBlur = 8;
-          ctx.fill();
-          ctx.shadowBlur = 0;
-
+        if (!sOff.lap.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, sOff.lap.z);
           ctx.textAlign = 'left';
-          ctx.fillStyle = elAccent;
-          ctx.font = this.getSubPartFont(config, 'splits', 'table', 'bold', 11);
-          ctx.fillText(`${it.shortName} ● RUNNING`, wireX + 14, ry + 4);
-
-          ctx.textAlign = 'right';
-          ctx.fillStyle = elAccent;
-          ctx.font = this.getSubPartFont(config, 'splits', 'table', 'bold', 12);
-          ctx.fillText((it.displayPaceFormatted || it.paceFormatted).split(' ')[0], x + width - padX - 14, ry + 4);
-          return;
+          ctx.fillStyle = sOff.lap.color !== 'default' ? sOff.lap.color : textMuted;
+          ctx.font = this.getSplitFont(config, widgetKey, idx, 'lap', 'bold', 11);
+          ctx.fillText(it.shortName, axisX + 16 + sOff.lap.x, nodeY - 2 + sOff.lap.y);
+          ctx.restore();
         }
 
-        ctx.beginPath();
-        ctx.arc(wireX, ry, it.isFastest && showFastest ? 5 : 3.5, 0, Math.PI * 2);
-        ctx.fillStyle = it.isFastest && showFastest ? elAccent : '#ffffff';
-        ctx.fill();
-
-        ctx.textAlign = 'left';
-        ctx.fillStyle = it.isFastest && showFastest ? elAccent : text;
-        ctx.font = this.getSubPartFont(config, 'splits', 'table', 'bold', 11);
-        ctx.fillText(it.shortName, wireX + 14, ry + 4);
-
-        ctx.textAlign = 'right';
-        ctx.fillStyle = text;
-        ctx.font = this.getSubPartFont(config, 'splits', 'table', 'bold', 12);
-        ctx.fillText(it.paceFormatted.split(' ')[0], x + width - padX - 14, ry + 4);
+        if (!sOff.pace.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, sOff.pace.z);
+          ctx.textAlign = 'right';
+          ctx.fillStyle = sOff.pace.color !== 'default' ? sOff.pace.color : (isFastest ? elAccent : text);
+          ctx.font = this.getSplitFont(config, widgetKey, idx, 'pace', 'bold', 12);
+          ctx.fillText(`${it.paceFormatted.split(' ')[0]} /km`, x + width - padX - 8 + sOff.pace.x, nodeY - 2 + sOff.pace.y);
+          ctx.restore();
+        }
       });
 
       ctx.restore();
-      return y + totalH;
+      return y + chartH;
     }
 
     if (design === 'compact-dot-matrix') {
-      // Style: Compact Pace Dot Matrix
-      const count = items.length;
-      this.recordBounds('splits', 'Splits Chart', x, y, width, chartH);
-      const isAnim = activity.isAnimated && items.some((it) => it.isCompleted !== undefined);
+      const dotW = (width - padX * 2) / count;
+      const midY = y + 42 + (chartH - 45) / 2;
 
-      const dotAreaY = y + 46;
-      const dotAreaH = chartH - 58;
-      const dotAreaW = width - padX * 2;
-      const cols = Math.min(count, 15);
-      const dotW = (dotAreaW - (cols - 1) * 6) / cols;
+      visibleSplits.forEach((it, idx) => {
+        const sOff = this.getSplitItemOffsets(config, widgetKey, idx);
+        if (sOff.split.hidden) return;
+        const cx = x + padX + idx * dotW + dotW / 2 + sOff.split.x;
+        const cy = midY + sOff.split.y;
+        const isFastest = it.isFastest && showFastest;
 
-      items.slice(0, cols).forEach((it, idx) => {
-        const dx = x + padX + idx * (dotW + 6);
-        const paceRatio = activity.avgPace > 0 && it.pace > 0 ? Math.max(0.3, Math.min(1.0, activity.avgPace / it.pace)) : 0.7;
-        const curH = dotAreaH * paceRatio;
-        const dy = dotAreaY + (dotAreaH - curH);
-
-        if (isAnim && it.isPending) {
-          this.drawRoundedRect(ctx, dx, dotAreaY + dotAreaH - 4, dotW, 4, 2);
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+        if (!sOff.bar.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, sOff.bar.z);
+          this.drawRoundedRect(ctx, cx - 12 + sOff.bar.x, cy - 14 + sOff.bar.y, 24, 28, 4);
+          ctx.fillStyle = sOff.bar.color !== 'default' ? sOff.bar.color : (isFastest ? elAccent : 'rgba(255, 255, 255, 0.08)');
           ctx.fill();
-        } else if (isAnim && it.isCurrent) {
-          const liveH = Math.max(4, curH * (it.splitProgress || 0.1));
-          this.drawRoundedRect(ctx, dx, dotAreaY + (dotAreaH - liveH), dotW, liveH, 4);
-          ctx.fillStyle = elAccent;
-          ctx.shadowColor = elAccent;
-          ctx.shadowBlur = 8;
-          ctx.fill();
-          ctx.shadowBlur = 0;
-        } else {
-          this.drawRoundedRect(ctx, dx, dy, dotW, curH, 4);
-          ctx.fillStyle = it.isFastest && showFastest ? elAccent : 'rgba(255, 255, 255, 0.75)';
-          ctx.fill();
+          ctx.restore();
         }
 
-        ctx.textAlign = 'center';
-        ctx.fillStyle = (isAnim && it.isCurrent) ? elAccent : textMuted;
-        ctx.font = '9px monospace';
-        ctx.fillText(`${idx + 1}`, dx + dotW / 2, dotAreaY + dotAreaH + 12);
+        if (!sOff.lap.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, sOff.lap.z);
+          ctx.textAlign = 'center';
+          ctx.fillStyle = sOff.lap.color !== 'default' ? sOff.lap.color : textMuted;
+          ctx.font = this.getSplitFont(config, widgetKey, idx, 'lap', 'bold', 9);
+          ctx.fillText(it.shortName, cx + sOff.lap.x, cy - 20 + sOff.lap.y);
+          ctx.restore();
+        }
+
+        if (!sOff.pace.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, sOff.pace.z);
+          ctx.textAlign = 'center';
+          ctx.fillStyle = sOff.pace.color !== 'default' ? sOff.pace.color : (isFastest ? '#000000' : text);
+          ctx.font = this.getSplitFont(config, widgetKey, idx, 'pace', 'bold', 9);
+          ctx.fillText(it.paceFormatted.split(' ')[0], cx + sOff.pace.x, cy + 4 + sOff.pace.y);
+          ctx.restore();
+        }
       });
 
       ctx.restore();
@@ -4385,77 +5523,60 @@ export class OverlayRenderer {
     }
 
     if (design === 'horizontal-bars') {
-      // Style 2: Horizontal Bars (Multi-column so ALL splits to end of workout fit)
-      const count = items.length;
-      const colCount = count <= 8 ? 1 : 2;
-      const perCol = Math.ceil(count / colCount);
-      const rowH = Math.min(22, (chartH - 48) / perCol);
-      const barAreaY = y + 42;
-      const colGap = 20;
-      const colW = (width - padX * 2 - (colCount - 1) * colGap) / colCount;
       const isAnim = activity.isAnimated && items.some((it) => it.isCompleted !== undefined);
+      const countH = Math.min(items.length, 6);
+      const rowH = Math.max(20, Math.min(26, Math.floor((chartH - 45) / countH)));
+      const startY = y + 40;
 
-      let minP = Infinity, maxP = 0;
-      items.forEach((it) => {
+      let minPace = Infinity, maxPace = 0;
+      items.slice(0, countH).forEach((it) => {
         if (it.pace > 0) {
-          if (it.pace < minP) minP = it.pace;
-          if (it.pace > maxP) maxP = it.pace;
+          if (it.pace < minPace) minPace = it.pace;
+          if (it.pace > maxPace) maxPace = it.pace;
         }
       });
-      if (minP === Infinity) minP = 240;
-      if (maxP <= minP) maxP = minP + 60;
+      if (minPace === Infinity) minPace = 240;
+      if (maxPace <= minPace) maxPace = minPace + 60;
 
-      items.forEach((it, idx) => {
-        const col = Math.floor(idx / perCol);
-        const row = idx % perCol;
-        const colX = x + padX + col * (colW + colGap);
-        const ry = barAreaY + row * rowH;
+      items.slice(0, countH).forEach((it, idx) => {
+        const sOff = this.getSplitItemOffsets(config, widgetKey, idx);
+        if (sOff.split.hidden) return;
+        const ry = startY + idx * rowH + sOff.split.y;
+        const isFastest = it.isFastest && showFastest;
 
-        ctx.textAlign = 'left';
-        ctx.fillStyle = (isAnim && it.isCurrent) ? elAccent : ((it.isFastest && showFastest) ? elAccent : textMuted);
-        ctx.font = this.getSubPartFont(config, 'splits', 'table', 'bold', 10);
-        ctx.fillText(it.shortName, colX, ry + 13);
-
-        const nameW = 24;
-        const paceW = 42;
-        const barStart = colX + nameW;
-        const maxBarW = colW - nameW - paceW;
-        const ratio = Math.max(0.2, 1 - (it.pace - minP) / (maxP - minP || 1) * 0.7);
-        const bw = Math.max(4, maxBarW * ratio);
-
-        if (isAnim && it.isPending) {
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
-          this.drawRoundedRect(ctx, barStart, ry + 3, 4, rowH - 6, 2);
-          ctx.fill();
-        } else if (isAnim && it.isCurrent) {
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-          this.drawRoundedRect(ctx, barStart, ry + 3, bw, rowH - 6, 2);
-          ctx.fill();
-
-          const liveBw = Math.max(6, bw * (it.splitProgress || 0.1));
-          ctx.fillStyle = elAccent;
-          ctx.shadowColor = elAccent;
-          ctx.shadowBlur = 8;
-          this.drawRoundedRect(ctx, barStart, ry + 3, liveBw, rowH - 6, 2);
-          ctx.fill();
-          ctx.shadowBlur = 0;
-        } else {
-          ctx.fillStyle = (it.isFastest && showFastest) ? elAccent : (isAnim ? 'rgba(255, 255, 255, 0.75)' : 'rgba(255, 255, 255, 0.4)');
-          this.drawRoundedRect(ctx, barStart, ry + 3, bw, rowH - 6, 2);
-          ctx.fill();
+        if (!sOff.lap.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, sOff.lap.z);
+          ctx.textAlign = 'left';
+          ctx.fillStyle = sOff.lap.color !== 'default' ? sOff.lap.color : textMuted;
+          ctx.font = this.getSplitFont(config, widgetKey, idx, 'lap', 'bold', 10);
+          ctx.fillText(it.shortName, x + padX + sOff.lap.x, ry + rowH / 2 + 4 + sOff.lap.y);
+          ctx.restore();
         }
 
-        let paceStr = it.paceFormatted.split(' ')[0];
-        if (isAnim && it.isPending) {
-          paceStr = '--:--';
-        } else if (isAnim && it.isCurrent) {
-          paceStr = (it.displayPaceFormatted || it.paceFormatted).split(' ')[0];
+        const barStartX = x + padX + 36;
+        const maxBarW = width - padX * 2 - 96;
+        const paceNorm = Math.max(0.2, Math.min(1, 1 - (it.pace - minPace) / (maxPace - minPace || 1) * 0.75));
+        const barW = maxBarW * paceNorm;
+
+        if (!sOff.bar.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, sOff.bar.z);
+          this.drawRoundedRect(ctx, barStartX + sOff.bar.x, ry + 3 + sOff.bar.y, barW, rowH - 6, 3);
+          ctx.fillStyle = sOff.bar.color !== 'default' ? sOff.bar.color : (isFastest ? elAccent : 'rgba(255, 255, 255, 0.45)');
+          ctx.fill();
+          ctx.restore();
         }
 
-        ctx.textAlign = 'right';
-        ctx.fillStyle = (isAnim && it.isCurrent) ? elAccent : ((it.isFastest && showFastest) ? elAccent : text);
-        ctx.font = this.getSubPartFont(config, 'splits', 'table', 'bold', 10);
-        ctx.fillText(paceStr, colX + colW, ry + 13);
+        if (!sOff.pace.hidden) {
+          ctx.save();
+          this.applyZDepth(ctx, sOff.pace.z);
+          ctx.textAlign = 'right';
+          ctx.fillStyle = sOff.pace.color !== 'default' ? sOff.pace.color : (isFastest ? elAccent : text);
+          ctx.font = this.getSplitFont(config, widgetKey, idx, 'pace', 'bold', 10);
+          ctx.fillText(it.paceFormatted.split(' ')[0], x + width - padX + sOff.pace.x, ry + rowH / 2 + 4 + sOff.pace.y);
+          ctx.restore();
+        }
       });
 
       ctx.restore();
@@ -4479,63 +5600,70 @@ export class OverlayRenderer {
     if (minPace === Infinity) minPace = 240;
     if (maxPace <= minPace) maxPace = minPace + 60;
 
-    const count = items.length;
-    const barGap = count > 25 ? 2 : count > 15 ? 4 : count > 8 ? 6 : 10;
-    const barW = Math.max(4, (barAreaW - barGap * (count - 1)) / count);
-    const labelStep = count > 24 ? 5 : count > 14 ? 2 : 1;
+    const totalCount = items.length;
+    const barGap = totalCount > 25 ? 2 : totalCount > 15 ? 4 : totalCount > 8 ? 6 : 10;
+    const barW = Math.max(4, (barAreaW - barGap * (totalCount - 1)) / totalCount);
+    const labelStep = totalCount > 24 ? 5 : totalCount > 14 ? 2 : 1;
 
     items.forEach((it, idx) => {
-      const bx = x + padX + idx * (barW + barGap);
+      const sOff = this.getSplitItemOffsets(config, widgetKey, idx);
+      if (sOff.split.hidden) return;
+
+      const bx = x + padX + idx * (barW + barGap) + sOff.split.x;
       const paceNorm = Math.max(0.2, Math.min(1, 1 - (it.pace - minPace) / (maxPace - minPace || 1) * 0.75));
       const fullBh = barAreaH * paceNorm;
 
-      if (isAnim && it.isPending) {
-        const bh = Math.max(3, barAreaH * 0.08);
-        const by = barAreaY + (barAreaH - bh);
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
-        ctx.shadowBlur = 0;
-        this.drawRoundedRect(ctx, bx, by, barW, bh, 3);
-        ctx.fill();
-      } else if (isAnim && it.isCurrent) {
-        // Ghost background container showing potential segment target
-        const ghostBy = barAreaY + (barAreaH - fullBh);
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
-        this.drawRoundedRect(ctx, bx, ghostBy, barW, fullBh, 3);
-        ctx.fill();
+      if (!sOff.bar.hidden) {
+        ctx.save();
+        this.applyZDepth(ctx, sOff.bar.z);
+        if (isAnim && it.isPending) {
+          const bh = Math.max(3, barAreaH * 0.08);
+          const by = barAreaY + (barAreaH - bh) + sOff.split.y + sOff.bar.y;
+          ctx.fillStyle = sOff.bar.color !== 'default' ? sOff.bar.color : 'rgba(255, 255, 255, 0.08)';
+          this.drawRoundedRect(ctx, bx + sOff.bar.x, by, barW, bh, 3);
+          ctx.fill();
+        } else if (isAnim && it.isCurrent) {
+          const ghostBy = barAreaY + (barAreaH - fullBh) + sOff.split.y + sOff.bar.y;
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+          this.drawRoundedRect(ctx, bx + sOff.bar.x, ghostBy, barW, fullBh, 3);
+          ctx.fill();
 
-        // Growing live bar proportional to segment progress
-        const liveBh = Math.max(4, fullBh * (it.splitProgress || 0.1));
-        const liveBy = barAreaY + (barAreaH - liveBh);
-        ctx.fillStyle = elAccent;
-        ctx.shadowColor = elAccent;
-        ctx.shadowBlur = 12;
-        this.drawRoundedRect(ctx, bx, liveBy, barW, liveBh, 3);
-        ctx.fill();
-        ctx.shadowBlur = 0;
-      } else {
-        const by = barAreaY + (barAreaH - fullBh);
-        if (it.isFastest && showFastest) {
-          ctx.fillStyle = elAccent;
+          const liveBh = Math.max(4, fullBh * (it.splitProgress || 0.1));
+          const liveBy = barAreaY + (barAreaH - liveBh) + sOff.split.y + sOff.bar.y;
+          ctx.fillStyle = sOff.bar.color !== 'default' ? sOff.bar.color : elAccent;
           ctx.shadowColor = elAccent;
-          ctx.shadowBlur = 8;
+          ctx.shadowBlur = 12;
+          this.drawRoundedRect(ctx, bx + sOff.bar.x, liveBy, barW, liveBh, 3);
+          ctx.fill();
         } else {
-          ctx.fillStyle = isAnim ? 'rgba(255, 255, 255, 0.85)' : 'rgba(255, 255, 255, 0.45)';
-          ctx.shadowBlur = 0;
+          const by = barAreaY + (barAreaH - fullBh) + sOff.split.y + sOff.bar.y;
+          if (sOff.bar.color !== 'default') {
+            ctx.fillStyle = sOff.bar.color;
+          } else if (it.isFastest && showFastest) {
+            ctx.fillStyle = elAccent;
+            ctx.shadowColor = elAccent;
+            ctx.shadowBlur = 8;
+          } else {
+            ctx.fillStyle = isAnim ? 'rgba(255, 255, 255, 0.85)' : 'rgba(255, 255, 255, 0.45)';
+          }
+          this.drawRoundedRect(ctx, bx + sOff.bar.x, by, barW, fullBh, 3);
+          ctx.fill();
         }
-        this.drawRoundedRect(ctx, bx, by, barW, fullBh, 3);
-        ctx.fill();
-        ctx.shadowBlur = 0;
+        ctx.restore();
       }
 
-      const shouldShowLabel = (idx % labelStep === 0) || (it.isFastest && showFastest) || (idx === count - 1) || (isAnim && it.isCurrent);
-      if (shouldShowLabel) {
+      const shouldShowLabel = (idx % labelStep === 0) || (it.isFastest && showFastest) || (idx === totalCount - 1) || (isAnim && it.isCurrent);
+      if (shouldShowLabel && !sOff.lap.hidden) {
+        ctx.save();
+        this.applyZDepth(ctx, sOff.lap.z);
         ctx.textAlign = 'center';
-        ctx.fillStyle = (isAnim && it.isCurrent) ? elAccent : ((it.isFastest && showFastest) ? elAccent : textMuted);
-        ctx.font = this.getSubPartFont(config, 'splits', 'table', '600', 10);
-        ctx.fillText(it.shortName, bx + barW / 2, barAreaY + barAreaH + 16);
+        ctx.fillStyle = sOff.lap.color !== 'default' ? sOff.lap.color : ((isAnim && it.isCurrent) ? elAccent : ((it.isFastest && showFastest) ? elAccent : textMuted));
+        ctx.font = this.getSplitFont(config, widgetKey, idx, 'lap', '600', 10);
+        ctx.fillText(it.shortName, bx + barW / 2 + sOff.lap.x, barAreaY + barAreaH + 16 + sOff.split.y + sOff.lap.y);
+        ctx.restore();
       }
 
-      if (barW >= 24) {
+      if (barW >= 24 && !sOff.pace.hidden) {
         let paceLabel = it.paceFormatted.split(' ')[0];
         if (isAnim && it.isPending) {
           paceLabel = '--';
@@ -4544,16 +5672,19 @@ export class OverlayRenderer {
         }
 
         const effectiveBy = isAnim && it.isCurrent ? (barAreaY + (barAreaH - Math.max(4, fullBh * (it.splitProgress || 0.1)))) : (barAreaY + (barAreaH - (isAnim && it.isPending ? Math.max(3, barAreaH * 0.08) : fullBh)));
+        ctx.save();
+        this.applyZDepth(ctx, sOff.pace.z);
         ctx.textAlign = 'center';
-        ctx.fillStyle = (isAnim && it.isCurrent) ? elAccent : ((it.isFastest && showFastest) ? elAccent : text);
-        ctx.font = this.getSubPartFont(config, 'splits', 'table', 'bold', 10);
-        ctx.fillText(paceLabel, bx + barW / 2, effectiveBy - 6);
+        ctx.fillStyle = sOff.pace.color !== 'default' ? sOff.pace.color : ((isAnim && it.isCurrent) ? elAccent : ((it.isFastest && showFastest) ? elAccent : text));
+        ctx.font = this.getSplitFont(config, widgetKey, idx, 'pace', 'bold', 10);
+        ctx.fillText(paceLabel, bx + barW / 2 + sOff.pace.x, effectiveBy - 6 + sOff.split.y + sOff.pace.y);
 
         if (isAnim && it.isCurrent) {
           ctx.fillStyle = elAccent;
           ctx.font = 'bold 9px sans-serif';
-          ctx.fillText('● LIVE', bx + barW / 2, effectiveBy - 18);
+          ctx.fillText('● LIVE', bx + barW / 2 + sOff.pace.x, effectiveBy - 18 + sOff.split.y + sOff.pace.y);
         }
+        ctx.restore();
       }
     });
 
@@ -4562,10 +5693,7 @@ export class OverlayRenderer {
   }
 
   // =========================================================================
-  // WIDGET 6: SPLIT HIGHLIGHT CARD
-  // Designs: 'spotlight', 'bib', 'medal-podium', 'polaroid-clip'
-  // =========================================================================
-  drawSplitHighlightCard(ctx, x, y, width, activity, config, theme, accent, customH = null) {
+  drawSplitHighlightCard(ctx, x, y, width, activity, config, theme, accent, customH = null, widgetKey = 'splitHighlight') {
     const isLapSource = config.splitDataSource === 'laps' && activity.hasLaps;
     const items = isLapSource ? activity.laps : activity.splits;
 
@@ -4589,24 +5717,87 @@ export class OverlayRenderer {
     const targetTimeFormatted = isTargetLive ? (target.displayTimeFormatted || target.timeFormatted) : target.timeFormatted;
 
     ctx.save();
-    const elStyle = this.getElementStyle(config, 'splitHighlight');
-    const { text, textMuted, accent: elAccent, cardStyle, align, opacity } = this.getEffectiveColors(config, theme, accent, 'splitHighlight');
+    const elStyle = this.getElementStyle(config, widgetKey);
+    const { text, textMuted, accent: elAccent, cardStyle, align, opacity } = this.getEffectiveColors(config, theme, accent, widgetKey);
     if (opacity < 1) ctx.globalAlpha = opacity;
     accent = elAccent;
 
     const font = this.getFontFamily(elStyle.fontFamily !== 'default' ? elStyle.fontFamily : config.fontFamily);
     const design = config.splitHighlightDesign || 'spotlight';
     const cardH = customH || 115;
-    this.recordBounds('splitHighlight', 'Split Highlight', x, y, width, cardH);
-    this.drawWidgetCardBg(ctx, 'splitHighlight', x, y, width, cardH, config, theme, true);
+    this.recordBounds(widgetKey, 'Split Highlight', x, y, width, cardH);
+    this.drawWidgetCardBg(ctx, widgetKey, x, y, width, cardH, config, theme, true);
 
-    const offBadge = this.getElementOffset(config, 'splitHighlight', 'badge');
-    const offVal = this.getElementOffset(config, 'splitHighlight', 'val');
-    const offTitle = this.getElementOffset(config, 'splitHighlight', 'title');
-    const offTime = this.getElementOffset(config, 'splitHighlight', 'time');
-    const offHr = this.getElementOffset(config, 'splitHighlight', 'hr');
+    const offBadge = this.getElementOffset(config, widgetKey, 'badge');
+    const offVal = this.getElementOffset(config, widgetKey, 'val');
+    const offTitle = this.getElementOffset(config, widgetKey, 'title');
+    const offTime = this.getElementOffset(config, widgetKey, 'time');
+    const offHr = this.getElementOffset(config, widgetKey, 'hr');
 
     const padX = 24;
+
+    if (design === 'centered-trophy-card') {
+      // Centered Trophy Card (Golden Halo & Fast Split Badge)
+      const trophyH = customH || 130;
+      this.recordBounds(widgetKey, 'Split Highlight', x, y, width, trophyH);
+      const effAlign = this.getWidgetAlign(align, 'center');
+      const cx = this.getAlignX(effAlign, x, width, 24, 'center');
+
+      this.drawRoundedRect(ctx, x, y, width, trophyH, 20);
+      ctx.fillStyle = cardStyle === 'solid' ? '#14141e' : 'rgba(16, 20, 32, 0.9)';
+      ctx.fill();
+      ctx.strokeStyle = '#fbbf24';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // Top Icon Halo
+      if (!offBadge.hidden) {
+        ctx.save();
+        this.applyZDepth(ctx, offBadge.z);
+        ctx.textAlign = 'center';
+        ctx.font = '24px sans-serif';
+        ctx.fillText(isTargetLive ? '🏃' : '🏆', cx + offBadge.x, y + 30 + offBadge.y);
+
+        ctx.fillStyle = '#fbbf24';
+        ctx.font = this.getSubPartFont(config, widgetKey, 'badge', 'bold', 11);
+        ctx.letterSpacing = '1px';
+        const defaultTag = isTargetLive
+          ? `LIVE INTERVAL • ${target.name.toUpperCase()}`
+          : (target.isFastest ? `FASTEST SPLIT // ${target.name.toUpperCase()}` : `SPOTLIGHT // ${target.name.toUpperCase()}`);
+        const tag = this.getTextOverride(config, widgetKey, 'badge', defaultTag);
+        ctx.fillText(tag, cx + offBadge.x, y + 48 + offBadge.y);
+        ctx.restore();
+      }
+
+      // Massive Centered Pace
+      if (!offVal.hidden) {
+        ctx.save();
+        this.applyZDepth(ctx, offVal.z);
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#ffffff';
+        ctx.font = this.getSubPartFont(config, widgetKey, 'val', 'bold', 42);
+        ctx.shadowColor = '#fbbf24';
+        ctx.shadowBlur = 10;
+        const valText = this.getTextOverride(config, widgetKey, 'val', targetPaceFormatted);
+        ctx.fillText(valText, cx + offVal.x, y + 88 + offVal.y);
+        ctx.restore();
+      }
+
+      // Bottom centered sub-stats pill
+      ctx.save();
+      const timeStr = this.getTextOverride(config, widgetKey, 'time', `⏱️ ${targetTimeFormatted}`);
+      const hrVal = isTargetLive && activity.liveHr ? activity.liveHr : (target.avgHr || activity.avgHr);
+      const hrStr = (target.avgHr || activity.avgHr) ? this.getTextOverride(config, widgetKey, 'hr', `❤️ ${hrVal} BPM`) : '';
+      const subInfo = hrStr ? `${timeStr}   •   ${hrStr}` : timeStr;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = textMuted;
+      ctx.font = this.getSubPartFont(config, widgetKey, 'time', 'bold', 12);
+      ctx.fillText(subInfo, cx, y + 112);
+      ctx.restore();
+
+      ctx.restore();
+      return y + trophyH;
+    }
 
     if (design === 'medal-podium') {
       // Style 3: Gold Medal Trophy Podium
@@ -4620,11 +5811,11 @@ export class OverlayRenderer {
 
         ctx.textAlign = 'left';
         ctx.fillStyle = '#fbbf24';
-        ctx.font = this.getSubPartFont(config, 'splitHighlight', 'badge', 'bold', 12);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'badge', 'bold', 12);
         const defaultBadge = isTargetLive
           ? `★ LIVE SPLIT • ${target.name.toUpperCase()} (${Math.round((target.splitProgress || 0) * 100)}%) ★`
           : `★ PODIUM SPLIT • ${target.name.toUpperCase()} ★`;
-        const badgeText = this.getTextOverride(config, 'splitHighlight', 'badge', defaultBadge);
+        const badgeText = this.getTextOverride(config, widgetKey, 'badge', defaultBadge);
         ctx.fillText(badgeText, x + padX + 60 + offBadge.x, y + 36 + offBadge.y);
         ctx.restore();
       }
@@ -4634,8 +5825,8 @@ export class OverlayRenderer {
         this.applyZDepth(ctx, offVal.z);
         ctx.textAlign = 'left';
         ctx.fillStyle = '#ffffff';
-        ctx.font = this.getSubPartFont(config, 'splitHighlight', 'val', 'bold', 42);
-        const valText = this.getTextOverride(config, 'splitHighlight', 'val', targetPaceFormatted);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'val', 'bold', 42);
+        const valText = this.getTextOverride(config, widgetKey, 'val', targetPaceFormatted);
         ctx.fillText(valText, x + padX + 60 + offVal.x, y + 80 + offVal.y);
         ctx.restore();
       }
@@ -4645,8 +5836,8 @@ export class OverlayRenderer {
         this.applyZDepth(ctx, offTime.z);
         ctx.textAlign = 'right';
         ctx.fillStyle = theme.textMuted;
-        ctx.font = this.getSubPartFont(config, 'splitHighlight', 'time', 'bold', 14);
-        const timeText = this.getTextOverride(config, 'splitHighlight', 'time', `TIME: ${targetTimeFormatted}`);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'time', 'bold', 14);
+        const timeText = this.getTextOverride(config, widgetKey, 'time', `TIME: ${targetTimeFormatted}`);
         ctx.fillText(timeText, x + width - padX + offTime.x, y + 54 + offTime.y);
         ctx.restore();
       }
@@ -4656,9 +5847,9 @@ export class OverlayRenderer {
         this.applyZDepth(ctx, offHr.z);
         ctx.textAlign = 'right';
         ctx.fillStyle = '#ef4444';
-        ctx.font = this.getSubPartFont(config, 'splitHighlight', 'hr', 'bold', 14);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'hr', 'bold', 14);
         const hrVal = isTargetLive && activity.liveHr ? activity.liveHr : (target.avgHr || activity.avgHr);
-        const hrText = this.getTextOverride(config, 'splitHighlight', 'hr', `HR: ${hrVal} BPM`);
+        const hrText = this.getTextOverride(config, widgetKey, 'hr', `HR: ${hrVal} BPM`);
         ctx.fillText(hrText, x + width - padX + offHr.x, y + 78 + offHr.y);
         ctx.restore();
       }
@@ -4671,29 +5862,40 @@ export class OverlayRenderer {
     if (design === 'trophy-cup') {
       // Style: Trophy Podium Banner (Gold Ribbon & Fast Split)
       ctx.save();
-      ctx.fillStyle = '#fbbf24';
-      ctx.font = '36px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(isTargetLive ? '🏃' : '🏆', x + padX + 24 + offBadge.x, y + 68 + offBadge.y);
+      if (!offBadge.hidden) {
+        ctx.fillStyle = '#fbbf24';
+        ctx.font = '36px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(isTargetLive ? '🏃' : '🏆', x + padX + 24 + offBadge.x, y + 68 + offBadge.y);
+      }
 
-      ctx.textAlign = 'left';
-      ctx.fillStyle = '#fbbf24';
-      ctx.font = this.getSubPartFont(config, 'splitHighlight', 'badge', 'bold', 12);
-      ctx.letterSpacing = '1px';
-      ctx.fillText(isTargetLive ? 'LIVE INTERVAL IN PROGRESS' : 'CHAMPION INTERVAL', x + padX + 64 + offBadge.x, y + 38 + offBadge.y);
+      const defaultTrophyBanner = isTargetLive ? 'LIVE INTERVAL IN PROGRESS' : 'CHAMPION INTERVAL';
+      const trophyBanner = this.getTextOverride(config, widgetKey, 'trophyBanner', defaultTrophyBanner);
+      const offTrophy = this.getElementOffset(config, widgetKey, 'trophyBanner');
+      if (!offTrophy.hidden && trophyBanner) {
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#fbbf24';
+        ctx.font = this.getSubPartFont(config, widgetKey, 'trophyBanner', 'bold', 12);
+        ctx.letterSpacing = '1px';
+        ctx.fillText(trophyBanner, x + padX + 64 + offTrophy.x, y + 38 + offTrophy.y);
+      }
 
-      ctx.fillStyle = text;
-      ctx.font = this.getSubPartFont(config, 'splitHighlight', 'title', 'bold', 20);
-      ctx.fillText(`${target.name} (${target.shortName})`, x + padX + 64 + offTitle.x, y + 64 + offTitle.y);
+      if (!offTitle.hidden) {
+        ctx.fillStyle = text;
+        ctx.font = this.getSubPartFont(config, widgetKey, 'title', 'bold', 20);
+        ctx.fillText(`${target.name} (${target.shortName})`, x + padX + 64 + offTitle.x, y + 64 + offTitle.y);
+      }
 
-      ctx.textAlign = 'right';
-      ctx.fillStyle = elAccent;
-      ctx.font = this.getSubPartFont(config, 'splitHighlight', 'val', 'bold', 32);
-      ctx.fillText(targetPaceFormatted.split(' ')[0], x + width - padX + offVal.x, y + 64 + offVal.y);
+      if (!offVal.hidden) {
+        ctx.textAlign = 'right';
+        ctx.fillStyle = elAccent;
+        ctx.font = this.getSubPartFont(config, widgetKey, 'val', 'bold', 32);
+        ctx.fillText(targetPaceFormatted.split(' ')[0], x + width - padX + offVal.x, y + 64 + offVal.y);
 
-      ctx.fillStyle = textMuted;
-      ctx.font = 'bold 11px sans-serif';
-      ctx.fillText(targetPaceFormatted.split(' ')[1] || '/KM', x + width - padX + offVal.x, y + 84 + offVal.y);
+        ctx.fillStyle = textMuted;
+        ctx.font = 'bold 11px sans-serif';
+        ctx.fillText(targetPaceFormatted.split(' ')[1] || '/KM', x + width - padX + offVal.x, y + 84 + offVal.y);
+      }
 
       ctx.restore();
       ctx.restore();
@@ -4703,23 +5905,32 @@ export class OverlayRenderer {
     if (design === 'split-terminal') {
       // Style: Digital Split Terminal (Monospace Code Prompt)
       ctx.save();
-      ctx.textAlign = 'left';
-      ctx.fillStyle = elAccent;
-      ctx.font = 'bold 11px monospace';
-      ctx.fillText(isTargetLive ? `> EXEC: LIVE_SEGMENT_TELEMETRY` : `> EXEC: FASTEST_INTERVAL_QUERY`, x + padX + offBadge.x, y + 32 + offBadge.y);
+      const defaultTermPrompt = isTargetLive ? `> EXEC: LIVE_SEGMENT_TELEMETRY` : `> EXEC: FASTEST_INTERVAL_QUERY`;
+      const termPrompt = this.getTextOverride(config, widgetKey, 'termPrompt', defaultTermPrompt);
+      const offTerm = this.getElementOffset(config, widgetKey, 'termPrompt');
+      if (!offTerm.hidden && termPrompt) {
+        ctx.textAlign = 'left';
+        ctx.fillStyle = elAccent;
+        ctx.font = 'bold 11px monospace';
+        ctx.fillText(termPrompt, x + padX + offTerm.x, y + 32 + offTerm.y);
+      }
 
-      ctx.fillStyle = text;
-      ctx.font = this.getSubPartFont(config, 'splitHighlight', 'title', 'bold', 20);
-      ctx.fillText(`TARGET: [ ${target.shortName} ] // ${targetTimeFormatted}`, x + padX + offTitle.x, y + 62 + offTitle.y);
+      if (!offTitle.hidden) {
+        ctx.fillStyle = text;
+        ctx.font = this.getSubPartFont(config, widgetKey, 'title', 'bold', 20);
+        ctx.fillText(`TARGET: [ ${target.shortName} ] // ${targetTimeFormatted}`, x + padX + offTitle.x, y + 62 + offTitle.y);
 
-      ctx.fillStyle = '#10b981';
-      ctx.font = 'bold 11px monospace';
-      ctx.fillText(`PACE_TELEMETRY: ${targetPaceFormatted}`, x + padX + offTitle.x, y + 84 + offTitle.y);
+        ctx.fillStyle = '#10b981';
+        ctx.font = 'bold 11px monospace';
+        ctx.fillText(`PACE_TELEMETRY: ${targetPaceFormatted}`, x + padX + offTitle.x, y + 84 + offTitle.y);
+      }
 
-      ctx.textAlign = 'right';
-      ctx.fillStyle = elAccent;
-      ctx.font = this.getSubPartFont(config, 'splitHighlight', 'val', 'bold', 34);
-      ctx.fillText(targetPaceFormatted.split(' ')[0], x + width - padX + offVal.x, y + 70 + offVal.y);
+      if (!offVal.hidden) {
+        ctx.textAlign = 'right';
+        ctx.fillStyle = elAccent;
+        ctx.font = this.getSubPartFont(config, widgetKey, 'val', 'bold', 34);
+        ctx.fillText(targetPaceFormatted.split(' ')[0], x + width - padX + offVal.x, y + 70 + offVal.y);
+      }
 
       ctx.restore();
       ctx.restore();
@@ -4750,8 +5961,8 @@ export class OverlayRenderer {
         this.applyZDepth(ctx, offTitle.z);
         ctx.textAlign = 'left';
         ctx.fillStyle = '#0f172a';
-        ctx.font = this.getSubPartFont(config, 'splitHighlight', 'title', 'bold', 14);
-        const titleText = this.getTextOverride(config, 'splitHighlight', 'title', isTargetLive ? `LIVE SEGMENT: ${target.name}` : `SPLIT NOTE: ${target.name}`);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'title', 'bold', 14);
+        const titleText = this.getTextOverride(config, widgetKey, 'title', isTargetLive ? `LIVE SEGMENT: ${target.name}` : `SPLIT NOTE: ${target.name}`);
         ctx.fillText(titleText, x + 50 + offTitle.x, y + 30 + offTitle.y);
         ctx.restore();
       }
@@ -4761,8 +5972,8 @@ export class OverlayRenderer {
         this.applyZDepth(ctx, offVal.z);
         ctx.textAlign = 'left';
         ctx.fillStyle = '#0284c7';
-        ctx.font = this.getSubPartFont(config, 'splitHighlight', 'val', 'bold', 46);
-        const valText = this.getTextOverride(config, 'splitHighlight', 'val', targetPaceFormatted);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'val', 'bold', 46);
+        const valText = this.getTextOverride(config, widgetKey, 'val', targetPaceFormatted);
         ctx.fillText(valText, x + 50 + offVal.x, y + 84 + offVal.y);
         ctx.restore();
       }
@@ -4772,8 +5983,8 @@ export class OverlayRenderer {
         this.applyZDepth(ctx, offTime.z);
         ctx.textAlign = 'right';
         ctx.fillStyle = '#475569';
-        ctx.font = this.getSubPartFont(config, 'splitHighlight', 'time', '600', 14);
-        const timeText = this.getTextOverride(config, 'splitHighlight', 'time', `Split Time: ${targetTimeFormatted}`);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'time', '600', 14);
+        const timeText = this.getTextOverride(config, widgetKey, 'time', `Split Time: ${targetTimeFormatted}`);
         ctx.fillText(timeText, x + width - 20 + offTime.x, y + 52 + offTime.y);
         ctx.restore();
       }
@@ -4783,9 +5994,9 @@ export class OverlayRenderer {
         this.applyZDepth(ctx, offHr.z);
         ctx.textAlign = 'right';
         ctx.fillStyle = '#475569';
-        ctx.font = this.getSubPartFont(config, 'splitHighlight', 'hr', '600', 14);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'hr', '600', 14);
         const defaultStat = isTargetLive && activity.liveHr ? `HR: ${activity.liveHr} BPM` : (target.avgHr ? `HR: ${target.avgHr} BPM` : `Elev: +${target.elevationGain || 0}m`);
-        const hrText = this.getTextOverride(config, 'splitHighlight', 'hr', defaultStat);
+        const hrText = this.getTextOverride(config, widgetKey, 'hr', defaultStat);
         ctx.fillText(hrText, x + width - 20 + offHr.x, y + 78 + offHr.y);
         ctx.restore();
       }
@@ -4803,9 +6014,9 @@ export class OverlayRenderer {
         this.drawRoundedRect(ctx, x + padX + offBadge.x, y + 16 + offBadge.y, 52, 24, 6);
         ctx.fill();
         ctx.fillStyle = '#000';
-        ctx.font = this.getSubPartFont(config, 'splitHighlight', 'badge', 'bold', 12);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'badge', 'bold', 12);
         ctx.textAlign = 'center';
-        const badgeText = this.getTextOverride(config, 'splitHighlight', 'badge', isTargetLive ? 'LIVE' : target.shortName);
+        const badgeText = this.getTextOverride(config, widgetKey, 'badge', isTargetLive ? 'LIVE' : target.shortName);
         ctx.fillText(badgeText, x + padX + 26 + offBadge.x, y + 33 + offBadge.y);
         ctx.restore();
       }
@@ -4815,8 +6026,8 @@ export class OverlayRenderer {
         this.applyZDepth(ctx, offTitle.z);
         ctx.textAlign = 'left';
         ctx.fillStyle = theme.text;
-        ctx.font = this.getSubPartFont(config, 'splitHighlight', 'title', 'bold', 14);
-        const titleText = this.getTextOverride(config, 'splitHighlight', 'title', target.name.toUpperCase());
+        ctx.font = this.getSubPartFont(config, widgetKey, 'title', 'bold', 14);
+        const titleText = this.getTextOverride(config, widgetKey, 'title', target.name.toUpperCase());
         ctx.fillText(titleText, x + padX + 64 + offTitle.x, y + 33 + offTitle.y);
         ctx.restore();
       }
@@ -4826,8 +6037,8 @@ export class OverlayRenderer {
         this.applyZDepth(ctx, offVal.z);
         ctx.textAlign = 'left';
         ctx.fillStyle = accent;
-        ctx.font = this.getSubPartFont(config, 'splitHighlight', 'val', 'bold', 48);
-        const valText = this.getTextOverride(config, 'splitHighlight', 'val', targetPaceFormatted);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'val', 'bold', 48);
+        const valText = this.getTextOverride(config, widgetKey, 'val', targetPaceFormatted);
         ctx.fillText(valText, x + padX + offVal.x, y + 88 + offVal.y);
         ctx.restore();
       }
@@ -4837,8 +6048,8 @@ export class OverlayRenderer {
         this.applyZDepth(ctx, offTime.z);
         ctx.textAlign = 'right';
         ctx.fillStyle = theme.textMuted;
-        ctx.font = this.getSubPartFont(config, 'splitHighlight', 'time', '600', 13);
-        const timeText = this.getTextOverride(config, 'splitHighlight', 'time', `SPLIT TIME: ${targetTimeFormatted}`);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'time', '600', 13);
+        const timeText = this.getTextOverride(config, widgetKey, 'time', `SPLIT TIME: ${targetTimeFormatted}`);
         ctx.fillText(timeText, x + width - padX + offTime.x, y + 52 + offTime.y);
         ctx.restore();
       }
@@ -4848,9 +6059,9 @@ export class OverlayRenderer {
         this.applyZDepth(ctx, offHr.z);
         ctx.textAlign = 'right';
         ctx.fillStyle = '#ef4444';
-        ctx.font = this.getSubPartFont(config, 'splitHighlight', 'hr', '600', 13);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'hr', '600', 13);
         const hrVal = isTargetLive && activity.liveHr ? activity.liveHr : (target.avgHr || activity.avgHr);
-        const hrText = this.getTextOverride(config, 'splitHighlight', 'hr', `HEART RATE: ${hrVal} BPM`);
+        const hrText = this.getTextOverride(config, widgetKey, 'hr', `HEART RATE: ${hrVal} BPM`);
         ctx.fillText(hrText, x + width - padX + offHr.x, y + 74 + offHr.y);
         ctx.restore();
       }
@@ -4865,65 +6076,80 @@ export class OverlayRenderer {
     this.drawCardBackground(ctx, x, y, width, cardH, config, theme, true);
     ctx.shadowBlur = 0;
 
+    const effAlign = this.getWidgetAlign(align, 'left');
+    const isCenter = effAlign === 'center';
+    const isRight = effAlign === 'right';
+
+    const leftX = x + padX;
+    const rightX = x + width - padX;
+    const centerX = x + width / 2;
+
+    const mainX = isCenter ? centerX : (isRight ? rightX : leftX);
+    const subX = isCenter ? centerX : (isRight ? leftX : rightX);
+    const mainAlign = isCenter ? 'center' : (isRight ? 'right' : 'left');
+    const subAlign = isCenter ? 'center' : (isRight ? 'left' : 'right');
+
     if (!offBadge.hidden) {
       ctx.save();
       this.applyZDepth(ctx, offBadge.z);
-      ctx.textAlign = 'left';
+      ctx.textAlign = mainAlign;
       ctx.fillStyle = accent;
-      ctx.font = this.getSubPartFont(config, 'splitHighlight', 'badge', 'bold', 12);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'badge', 'bold', 12);
       ctx.letterSpacing = '1px';
       const defaultTag = isTargetLive
         ? `★ LIVE SPLIT • ${target.name.toUpperCase()} (${Math.round((target.splitProgress || 0) * 100)}%) ★`
         : (target.isFastest ? '⚡ FASTEST SPLIT SPOTLIGHT' : 'HIGHLIGHTED SPLIT');
-      const tag = this.getTextOverride(config, 'splitHighlight', 'badge', defaultTag);
-      ctx.fillText(tag, x + padX + offBadge.x, y + 30 + offBadge.y);
+      const tag = this.getTextOverride(config, widgetKey, 'badge', defaultTag);
+      ctx.fillText(tag, mainX + offBadge.x, (isCenter ? y + 26 : y + 30) + offBadge.y);
       ctx.restore();
     }
 
     if (!offVal.hidden) {
       ctx.save();
       this.applyZDepth(ctx, offVal.z);
-      ctx.textAlign = 'left';
+      ctx.textAlign = mainAlign;
       ctx.fillStyle = '#ffffff';
-      ctx.font = this.getSubPartFont(config, 'splitHighlight', 'val', 'bold', 44);
-      const valText = this.getTextOverride(config, 'splitHighlight', 'val', targetPaceFormatted);
-      ctx.fillText(valText, x + padX + offVal.x, y + 82 + offVal.y);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'val', 'bold', isCenter ? 40 : 44);
+      const valText = this.getTextOverride(config, widgetKey, 'val', targetPaceFormatted);
+      ctx.fillText(valText, mainX + offVal.x, (isCenter ? y + 68 : y + 82) + offVal.y);
       ctx.restore();
     }
 
     if (!offTitle.hidden) {
       ctx.save();
       this.applyZDepth(ctx, offTitle.z);
-      ctx.textAlign = 'right';
+      ctx.textAlign = subAlign;
       ctx.fillStyle = theme.text;
-      ctx.font = this.getSubPartFont(config, 'splitHighlight', 'title', 'bold', 18);
-      const titleText = this.getTextOverride(config, 'splitHighlight', 'title', target.name);
-      ctx.fillText(titleText, x + width - padX + offTitle.x, y + 36 + offTitle.y);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'title', 'bold', isCenter ? 14 : 18);
+      const titleText = this.getTextOverride(config, widgetKey, 'title', target.name);
+      ctx.fillText(titleText, subX + offTitle.x, (isCenter ? y + 90 : y + 36) + offTitle.y);
       ctx.restore();
     }
 
     if (!offTime.hidden) {
       ctx.save();
       this.applyZDepth(ctx, offTime.z);
-      ctx.textAlign = 'right';
+      ctx.textAlign = subAlign;
       ctx.fillStyle = theme.textMuted;
-      ctx.font = this.getSubPartFont(config, 'splitHighlight', 'time', '600', 14);
-      const timeText = this.getTextOverride(config, 'splitHighlight', 'time', `Time: ${targetTimeFormatted}`);
-      ctx.fillText(timeText, x + width - padX + offTime.x, y + 62 + offTime.y);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'time', '600', 13);
+      const timeText = this.getTextOverride(config, widgetKey, 'time', `Time: ${targetTimeFormatted}`);
+      ctx.fillText(timeText, subX + offTime.x, (isCenter ? y + 106 : y + 62) + offTime.y);
       ctx.restore();
     }
 
     if (!offHr.hidden && (target.elevationGain !== undefined || target.avgHr || activity.avgHr)) {
       ctx.save();
       this.applyZDepth(ctx, offHr.z);
-      ctx.textAlign = 'right';
+      ctx.textAlign = subAlign;
       ctx.fillStyle = theme.textMuted;
-      ctx.font = this.getSubPartFont(config, 'splitHighlight', 'hr', '600', 14);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'hr', '600', 13);
       const defaultStat = isTargetLive && activity.liveHr
         ? `HR: ${activity.liveHr} BPM`
         : (target.avgHr ? `HR: ${target.avgHr} BPM` : (activity.avgHr ? `HR: ${activity.avgHr} BPM` : `Gain: +${target.elevationGain}m`));
-      const hrText = this.getTextOverride(config, 'splitHighlight', 'hr', defaultStat);
-      ctx.fillText(hrText, x + width - padX + offHr.x, y + 84 + offHr.y);
+      const hrText = this.getTextOverride(config, widgetKey, 'hr', defaultStat);
+      if (!isCenter) {
+        ctx.fillText(hrText, subX + offHr.x, y + 84 + offHr.y);
+      }
       ctx.restore();
     }
 
@@ -4995,25 +6221,25 @@ export class OverlayRenderer {
   // WIDGET 7: ELEVATION PROFILE
   // Designs: 'area', 'line', 'stepped-gradient', 'mountain-peaks'
   // =========================================================================
-  drawElevationProfile(ctx, x, y, width, height, activity, config, theme, accent) {
+  drawElevationProfile(ctx, x, y, width, height, activity, config, theme, accent, widgetKey = 'elevation') {
     const pts = activity.trackpoints || [];
     if (!pts || pts.length < 3) return;
 
     ctx.save();
-    const elStyle = this.getElementStyle(config, 'elevation');
-    const { text, textMuted, accent: elAccent, cardStyle, align, opacity } = this.getEffectiveColors(config, theme, accent, 'elevation');
+    const elStyle = this.getElementStyle(config, widgetKey);
+    const { text, textMuted, accent: elAccent, cardStyle, align, opacity } = this.getEffectiveColors(config, theme, accent, widgetKey);
     if (opacity < 1) ctx.globalAlpha = opacity;
     accent = elAccent;
 
     const font = this.getFontFamily(elStyle.fontFamily !== 'default' ? elStyle.fontFamily : config.fontFamily);
     const design = config.elevationDesign || 'area';
-    this.recordBounds('elevation', 'Elevation Profile', x, y, width, height);
+    this.recordBounds(widgetKey, 'Elevation Profile', x, y, width, height);
 
-    this.drawWidgetCardBg(ctx, 'elevation', x, y, width, height, config, theme);
+    this.drawWidgetCardBg(ctx, widgetKey, x, y, width, height, config, theme);
 
-    const offTitle = this.getElementOffset(config, 'elevation', 'title');
-    const offStat = this.getElementOffset(config, 'elevation', 'stat');
-    const offChart = this.getElementOffset(config, 'elevation', 'chart');
+    const offTitle = this.getElementOffset(config, widgetKey, 'title');
+    const offStat = this.getElementOffset(config, widgetKey, 'stat');
+    const offChart = this.getElementOffset(config, widgetKey, 'chart');
 
     const pad = 16;
     const chartW = width - pad * 2;
@@ -5021,26 +6247,39 @@ export class OverlayRenderer {
     const chartX = x + pad;
     const chartY = y + 26;
 
-    const elevTitle = this.getTextOverride(config, 'elevation', 'title', 'ELEVATION PROFILE');
+    const elevTitle = this.getTextOverride(config, widgetKey, 'title', 'ELEVATION PROFILE');
+    const effAlign = this.getWidgetAlign(align, 'left');
+    const isCenter = effAlign === 'center';
+    const isRight = effAlign === 'right';
+
     if (!offTitle.hidden && elevTitle) {
       ctx.save();
       this.applyZDepth(ctx, offTitle.z);
-      ctx.textAlign = 'left';
+      ctx.textAlign = isCenter ? 'center' : (isRight ? 'right' : 'left');
       ctx.fillStyle = theme.textMuted;
-      ctx.font = this.getSubPartFont(config, 'elevation', 'title', 'bold', 11);
-      ctx.fillText(elevTitle, chartX + offTitle.x, y + 18 + offTitle.y);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'title', 'bold', 11);
+      const titleX = isCenter ? x + width / 2 : (isRight ? chartX + chartW : chartX);
+      ctx.fillText(elevTitle, titleX + offTitle.x, y + 18 + offTitle.y);
       ctx.restore();
     }
 
     if (!offStat.hidden) {
       ctx.save();
       this.applyZDepth(ctx, offStat.z);
-      ctx.textAlign = 'right';
-      ctx.fillStyle = accent;
-      ctx.font = this.getSubPartFont(config, 'elevation', 'stat', 'bold', 11);
       const defaultElevStat = `+${activity.elevationGain || 0}M GAIN  •  PEAK ${activity.maxElevation || 0}M`;
-      const elevStat = this.getTextOverride(config, 'elevation', 'stat', defaultElevStat);
-      ctx.fillText(elevStat, chartX + chartW + offStat.x, y + 18 + offStat.y);
+      const elevStat = this.getTextOverride(config, widgetKey, 'stat', defaultElevStat);
+      if (isCenter) {
+        ctx.textAlign = 'center';
+        ctx.fillStyle = accent;
+        ctx.font = this.getSubPartFont(config, widgetKey, 'stat', 'bold', 10);
+        ctx.fillText(elevStat, x + width / 2 + offStat.x, y + 30 + offStat.y);
+      } else {
+        ctx.textAlign = isRight ? 'left' : 'right';
+        ctx.fillStyle = accent;
+        ctx.font = this.getSubPartFont(config, widgetKey, 'stat', 'bold', 11);
+        const statX = isRight ? chartX : chartX + chartW;
+        ctx.fillText(elevStat, statX + offStat.x, y + 18 + offStat.y);
+      }
       ctx.restore();
     }
 
@@ -5086,6 +6325,69 @@ export class OverlayRenderer {
       ctx.restore();
     }
 
+    if (design === 'centered-mountain-peak') {
+      // Centered Mountain Peak (Symmetrical Mountain Peak & Summit Banner)
+      const midX = chartX + chartW / 2;
+      const peakY = chartY + 18;
+      const baseY = chartY + chartH - 4;
+      const peakW = chartW * 0.72;
+
+      // Symmetrical Mountain Gradient Fill
+      ctx.beginPath();
+      ctx.moveTo(midX - peakW / 2, baseY);
+      ctx.lineTo(midX, peakY);
+      ctx.lineTo(midX + peakW / 2, baseY);
+      ctx.closePath();
+
+      const mGrad = ctx.createLinearGradient(midX, peakY, midX, baseY);
+      mGrad.addColorStop(0, elAccent);
+      mGrad.addColorStop(0.5, 'rgba(251, 191, 36, 0.4)');
+      mGrad.addColorStop(1, 'rgba(15, 23, 42, 0.05)');
+      ctx.fillStyle = mGrad;
+      ctx.fill();
+
+      ctx.strokeStyle = elAccent;
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
+      // Ridge inner lines
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(midX, peakY);
+      ctx.lineTo(midX, baseY);
+      ctx.stroke();
+
+      // Summit Banner Pill
+      const defaultSummit = `⛰️ SUMMIT ${maxEle}M`;
+      const summitText = this.getTextOverride(config, widgetKey, 'summitBadge', defaultSummit);
+      const offSummit = this.getElementOffset(config, widgetKey, 'summitBadge');
+      if (!offSummit.hidden && summitText) {
+        const sumW = 120;
+        this.drawRoundedRect(ctx, midX - sumW / 2 + offSummit.x, peakY - 14 + offSummit.y, sumW, 20, 10);
+        ctx.fillStyle = '#0f172a';
+        ctx.fill();
+        ctx.strokeStyle = elAccent;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.textAlign = 'center';
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'summitBadge', elAccent);
+        ctx.font = 'bold 10px sans-serif';
+        ctx.fillText(summitText, midX + offSummit.x, peakY + offSummit.y);
+      }
+
+      // Baseline with tick marks
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(chartX, baseY);
+      ctx.lineTo(chartX + chartW, baseY);
+      ctx.stroke();
+
+      ctx.restore();
+      return y + height;
+    }
 
     if (design === 'stepped-bars') {
       // Style: Stepped Altitude Columns (Quantized Terrain Bars)
@@ -5307,25 +6609,25 @@ export class OverlayRenderer {
   // WIDGET 8: PACE GRAPH
   // Designs: 'area', 'line', 'gradient-zone', 'stepped-splits'
   // =========================================================================
-  drawPaceGraph(ctx, x, y, width, height, activity, config, theme, accent) {
+  drawPaceGraph(ctx, x, y, width, height, activity, config, theme, accent, widgetKey = 'paceGraph') {
     const pts = activity.paceCurve || [];
     if (!pts || pts.length < 3) return y;
 
     ctx.save();
-    const elStyle = this.getElementStyle(config, 'paceGraph');
-    const { text, textMuted, accent: elAccent, cardStyle, align, opacity } = this.getEffectiveColors(config, theme, accent, 'paceGraph');
+    const elStyle = this.getElementStyle(config, widgetKey);
+    const { text, textMuted, accent: elAccent, cardStyle, align, opacity } = this.getEffectiveColors(config, theme, accent, widgetKey);
     if (opacity < 1) ctx.globalAlpha = opacity;
     accent = elAccent;
 
     const font = this.getFontFamily(elStyle.fontFamily !== 'default' ? elStyle.fontFamily : config.fontFamily);
     const design = config.paceGraphDesign || 'area';
-    this.recordBounds('paceGraph', 'Pace Graph', x, y, width, height);
+    this.recordBounds(widgetKey, 'Pace Graph', x, y, width, height);
 
-    this.drawWidgetCardBg(ctx, 'paceGraph', x, y, width, height, config, theme);
+    this.drawWidgetCardBg(ctx, widgetKey, x, y, width, height, config, theme);
 
-    const offTitle = this.getElementOffset(config, 'paceGraph', 'title');
-    const offStat = this.getElementOffset(config, 'paceGraph', 'stat');
-    const offChart = this.getElementOffset(config, 'paceGraph', 'chart');
+    const offTitle = this.getElementOffset(config, widgetKey, 'title');
+    const offStat = this.getElementOffset(config, widgetKey, 'stat');
+    const offChart = this.getElementOffset(config, widgetKey, 'chart');
 
     const pad = 16;
     const chartW = width - pad * 2;
@@ -5333,28 +6635,41 @@ export class OverlayRenderer {
     const chartX = x + pad;
     const chartY = y + 28;
 
-    const paceTitle = this.getTextOverride(config, 'paceGraph', 'title', 'PACE PROFILE');
+    const paceTitle = this.getTextOverride(config, widgetKey, 'title', 'PACE PROFILE');
+    const effAlign = this.getWidgetAlign(align, 'left');
+    const isCenter = effAlign === 'center';
+    const isRight = effAlign === 'right';
+
     if (!offTitle.hidden && paceTitle) {
       ctx.save();
       this.applyZDepth(ctx, offTitle.z);
-      ctx.textAlign = 'left';
+      ctx.textAlign = isCenter ? 'center' : (isRight ? 'right' : 'left');
       ctx.fillStyle = theme.textMuted;
-      ctx.font = this.getSubPartFont(config, 'paceGraph', 'title', 'bold', 11);
-      ctx.fillText(paceTitle, chartX + offTitle.x, y + 18 + offTitle.y);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'title', 'bold', 11);
+      const titleX = isCenter ? x + width / 2 : (isRight ? chartX + chartW : chartX);
+      ctx.fillText(paceTitle, titleX + offTitle.x, y + 18 + offTitle.y);
       ctx.restore();
     }
 
     if (!offStat.hidden) {
       ctx.save();
       this.applyZDepth(ctx, offStat.z);
-      ctx.textAlign = 'right';
-      ctx.fillStyle = accent;
-      ctx.font = this.getSubPartFont(config, 'paceGraph', 'stat', 'bold', 11);
       const defaultPaceStat = activity.isAnimated && activity.livePaceFormatted
         ? `LIVE: ${activity.livePaceFormatted.split(' ')[0]}  •  AVG: ${activity.avgPaceFormatted.split(' ')[0]}`
         : `AVG: ${activity.avgPaceFormatted}  •  BEST: ${activity.bestPaceFormatted || '--'}`;
-      const paceStat = this.getTextOverride(config, 'paceGraph', 'stat', defaultPaceStat);
-      ctx.fillText(paceStat, chartX + chartW + offStat.x, y + 18 + offStat.y);
+      const paceStat = this.getTextOverride(config, widgetKey, 'stat', defaultPaceStat);
+      if (isCenter) {
+        ctx.textAlign = 'center';
+        ctx.fillStyle = accent;
+        ctx.font = this.getSubPartFont(config, widgetKey, 'stat', 'bold', 10);
+        ctx.fillText(paceStat, x + width / 2 + offStat.x, y + 30 + offStat.y);
+      } else {
+        ctx.textAlign = isRight ? 'left' : 'right';
+        ctx.fillStyle = accent;
+        ctx.font = this.getSubPartFont(config, widgetKey, 'stat', 'bold', 11);
+        const statX = isRight ? chartX : chartX + chartW;
+        ctx.fillText(paceStat, statX + offStat.x, y + 18 + offStat.y);
+      }
       ctx.restore();
     }
 
@@ -5377,6 +6692,63 @@ export class OverlayRenderer {
     const dPace = maxPace - minPace;
     const totalDist = activity.fullDistance || activity.distance || 1;
     const getY = (pace) => chartY + ((pace - minPace) / dPace) * chartH;
+
+    if (design === 'centered-speed-pulse') {
+      // Centered Speed Pulse (Oscilloscope Telemetry Wave with Target Pace Centerline)
+      const midY = chartY + chartH / 2;
+
+      // Centerline target pace
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(chartX, midY);
+      ctx.lineTo(chartX + chartW, midY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Telemetry Waveform
+      ctx.beginPath();
+      pts.forEach((p, idx) => {
+        const px = chartX + (p.dist / totalDist) * chartW;
+        const py = getY(p.pace);
+        if (idx === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      });
+      ctx.strokeStyle = elAccent;
+      ctx.lineWidth = 3;
+      ctx.shadowColor = elAccent;
+      ctx.shadowBlur = 12;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // Centered Top HUD Readout Pill
+      const defaultSpeedPulse = `⚡ SPEED // ${activity.avgPaceFormatted}`;
+      const speedPulseText = this.getTextOverride(config, widgetKey, 'speedPulseTag', defaultSpeedPulse);
+      const offSpeedPulse = this.getElementOffset(config, widgetKey, 'speedPulseTag');
+      if (!offSpeedPulse.hidden && speedPulseText) {
+        const hudW = 150;
+        const hudX = chartX + (chartW - hudW) / 2;
+        this.drawRoundedRect(ctx, hudX + offSpeedPulse.x, chartY - 2 + offSpeedPulse.y, hudW, 18, 9);
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+        ctx.fill();
+        ctx.strokeStyle = elAccent;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.textAlign = 'center';
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'speedPulseTag', elAccent);
+        ctx.font = 'bold 9px monospace';
+        ctx.fillText(speedPulseText, chartX + chartW / 2 + offSpeedPulse.x, chartY + 11 + offSpeedPulse.y);
+      }
+
+      if (activity.runnerPoint) {
+        const curY = getY(activity.avgPace);
+        this.drawChartScanningCursor(ctx, chartX, chartY, chartW, chartH, activity.runnerPoint.dist, totalDist, curY, activity.avgPaceFormatted, elAccent, font);
+      }
+      ctx.restore();
+      return y + height;
+    }
 
     if (design === 'bar-histogram') {
       // Style 5: High-Density Pace Bar Histogram
@@ -5517,25 +6889,25 @@ export class OverlayRenderer {
   // WIDGET 9: HEART RATE GRAPH
   // Designs: 'filled-area', 'ecg-wave', 'zone-bars', 'pulse-glow'
   // =========================================================================
-  drawHeartRateGraph(ctx, x, y, width, height, activity, config, theme, accent) {
+  drawHeartRateGraph(ctx, x, y, width, height, activity, config, theme, accent, widgetKey = 'hrGraph') {
     const pts = activity.hrCurve || [];
     if (!pts || pts.length < 3) return y;
 
     ctx.save();
-    const elStyle = this.getElementStyle(config, 'hrGraph');
-    const { text, textMuted, accent: elAccent, cardStyle, align, opacity } = this.getEffectiveColors(config, theme, accent, 'hrGraph');
+    const elStyle = this.getElementStyle(config, widgetKey);
+    const { text, textMuted, accent: elAccent, cardStyle, align, opacity } = this.getEffectiveColors(config, theme, accent, widgetKey);
     if (opacity < 1) ctx.globalAlpha = opacity;
     accent = elAccent;
 
     const font = this.getFontFamily(elStyle.fontFamily !== 'default' ? elStyle.fontFamily : config.fontFamily);
     const design = config.hrGraphDesign || 'filled-area';
-    this.recordBounds('hrGraph', 'Heart Rate Graph', x, y, width, height);
+    this.recordBounds(widgetKey, 'Heart Rate Graph', x, y, width, height);
 
-    this.drawWidgetCardBg(ctx, 'hrGraph', x, y, width, height, config, theme);
+    this.drawWidgetCardBg(ctx, widgetKey, x, y, width, height, config, theme);
 
-    const offTitle = this.getElementOffset(config, 'hrGraph', 'title');
-    const offStat = this.getElementOffset(config, 'hrGraph', 'stat');
-    const offChart = this.getElementOffset(config, 'hrGraph', 'chart');
+    const offTitle = this.getElementOffset(config, widgetKey, 'title');
+    const offStat = this.getElementOffset(config, widgetKey, 'stat');
+    const offChart = this.getElementOffset(config, widgetKey, 'chart');
 
     const pad = 16;
     const chartW = width - pad * 2;
@@ -5543,28 +6915,41 @@ export class OverlayRenderer {
     const chartX = x + pad;
     const chartY = y + 28;
 
-    const hrTitle = this.getTextOverride(config, 'hrGraph', 'title', 'HEART RATE PROFILE');
+    const hrTitle = this.getTextOverride(config, widgetKey, 'title', 'HEART RATE PROFILE');
+    const effAlign = this.getWidgetAlign(align, 'left');
+    const isCenter = effAlign === 'center';
+    const isRight = effAlign === 'right';
+
     if (!offTitle.hidden && hrTitle) {
       ctx.save();
       this.applyZDepth(ctx, offTitle.z);
-      ctx.textAlign = 'left';
+      ctx.textAlign = isCenter ? 'center' : (isRight ? 'right' : 'left');
       ctx.fillStyle = theme.textMuted;
-      ctx.font = this.getSubPartFont(config, 'hrGraph', 'title', 'bold', 11);
-      ctx.fillText(hrTitle, chartX + offTitle.x, y + 18 + offTitle.y);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'title', 'bold', 11);
+      const titleX = isCenter ? x + width / 2 : (isRight ? chartX + chartW : chartX);
+      ctx.fillText(hrTitle, titleX + offTitle.x, y + 18 + offTitle.y);
       ctx.restore();
     }
 
     if (!offStat.hidden) {
       ctx.save();
       this.applyZDepth(ctx, offStat.z);
-      ctx.textAlign = 'right';
-      ctx.fillStyle = '#ef4444';
-      ctx.font = this.getSubPartFont(config, 'hrGraph', 'stat', 'bold', 11);
       const defaultHrStat = activity.isAnimated && activity.liveHr
         ? `LIVE: ${activity.liveHr} BPM  •  AVG: ${activity.avgHr || '--'} BPM`
         : `AVG: ${activity.avgHr || '--'} BPM  •  MAX: ${activity.maxHr || '--'}`;
-      const hrStat = this.getTextOverride(config, 'hrGraph', 'stat', defaultHrStat);
-      ctx.fillText(hrStat, chartX + chartW + offStat.x, y + 18 + offStat.y);
+      const hrStat = this.getTextOverride(config, widgetKey, 'stat', defaultHrStat);
+      if (isCenter) {
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#ef4444';
+        ctx.font = this.getSubPartFont(config, widgetKey, 'stat', 'bold', 10);
+        ctx.fillText(hrStat, x + width / 2 + offStat.x, y + 30 + offStat.y);
+      } else {
+        ctx.textAlign = isRight ? 'left' : 'right';
+        ctx.fillStyle = '#ef4444';
+        ctx.font = this.getSubPartFont(config, widgetKey, 'stat', 'bold', 11);
+        const statX = isRight ? chartX : chartX + chartW;
+        ctx.fillText(hrStat, statX + offStat.x, y + 18 + offStat.y);
+      }
       ctx.restore();
     }
 
@@ -5579,6 +6964,63 @@ export class OverlayRenderer {
     const totalDist = activity.fullDistance || activity.distance || 1;
 
     const getY = (hr) => chartY + chartH - ((hr - minH) / dH) * chartH;
+
+    if (design === 'centered-cardiac-halo') {
+      // Centered Cardiac Halo (Glowing ECG Waveform & Centered Heart Readout)
+      const midY = chartY + chartH / 2;
+
+      // Centerline baseline
+      ctx.strokeStyle = 'rgba(239, 68, 68, 0.2)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(chartX, midY);
+      ctx.lineTo(chartX + chartW, midY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Cardiac ECG Waveform
+      ctx.beginPath();
+      pts.forEach((p, idx) => {
+        const px = chartX + (p.dist / totalDist) * chartW;
+        const py = getY(p.hr);
+        if (idx === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      });
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 2.5;
+      ctx.shadowColor = '#ef4444';
+      ctx.shadowBlur = 12;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // Top Centered Cardiac Readout Pill
+      const defaultCardiacHalo = `❤️ CARDIAC // ${activity.avgHr || '--'} BPM`;
+      const cardiacHaloText = this.getTextOverride(config, widgetKey, 'cardiacHaloTag', defaultCardiacHalo);
+      const offCardiacHalo = this.getElementOffset(config, widgetKey, 'cardiacHaloTag');
+      if (!offCardiacHalo.hidden && cardiacHaloText) {
+        const pillW = 150;
+        const pillX = chartX + (chartW - pillW) / 2;
+        this.drawRoundedRect(ctx, pillX + offCardiacHalo.x, chartY - 2 + offCardiacHalo.y, pillW, 18, 9);
+        ctx.fillStyle = 'rgba(20, 10, 14, 0.88)';
+        ctx.fill();
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.textAlign = 'center';
+        ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'cardiacHaloTag', '#ef4444');
+        ctx.font = 'bold 9px monospace';
+        ctx.fillText(cardiacHaloText, chartX + chartW / 2 + offCardiacHalo.x, chartY + 11 + offCardiacHalo.y);
+      }
+
+      if (activity.runnerPoint) {
+        const curY = getY(activity.avgHr || 140);
+        this.drawChartScanningCursor(ctx, chartX, chartY, chartW, chartH, activity.runnerPoint.dist, totalDist, curY, `${activity.avgHr || '--'} bpm`, '#ef4444', font);
+      }
+      ctx.restore();
+      return y + height;
+    }
 
     if (design === 'zone-gradient-strip') {
       // Style 5: Continuous Z1-Z5 Multi-Zone Color Gradient
@@ -5728,34 +7170,92 @@ export class OverlayRenderer {
   // WIDGET 10: AVERAGE HEART RATE BADGE
   // Designs: 'pill', 'card', 'heart-gauge', 'compact-tag'
   // =========================================================================
-  drawAvgHeartRateBadge(ctx, x, y, width, activity, config, theme, accent, customH = null) {
+  drawAvgHeartRateBadge(ctx, x, y, width, activity, config, theme, accent, customH = null, widgetKey = 'hrBadge') {
     if (!activity.avgHr) return y;
 
     ctx.save();
-    const elStyle = this.getElementStyle(config, 'hrBadge');
-    const { text, textMuted, accent: elAccent, cardStyle, align, opacity } = this.getEffectiveColors(config, theme, accent, 'hrBadge');
+    const elStyle = this.getElementStyle(config, widgetKey);
+    const { text, textMuted, accent: elAccent, cardStyle, align, opacity } = this.getEffectiveColors(config, theme, accent, widgetKey);
     if (opacity < 1) ctx.globalAlpha = opacity;
 
     const font = this.getFontFamily(elStyle.fontFamily !== 'default' ? elStyle.fontFamily : config.fontFamily);
     const design = config.hrBadgeDesign || 'pill';
     const h = customH || 60;
-    this.recordBounds('hrBadge', 'Avg HR Badge', x, y, width, h);
-    this.drawWidgetCardBg(ctx, 'hrBadge', x, y, width, h, config, theme, true);
+    this.recordBounds(widgetKey, 'Avg HR Badge', x, y, width, h);
+    this.drawWidgetCardBg(ctx, widgetKey, x, y, width, h, config, theme, true);
 
-    const offIcon = this.getElementOffset(config, 'hrBadge', 'icon');
-    const offLabel = this.getElementOffset(config, 'hrBadge', 'label');
-    const offVal = this.getElementOffset(config, 'hrBadge', 'val');
-    const offUnit = this.getElementOffset(config, 'hrBadge', 'unit');
-    const offPeak = this.getElementOffset(config, 'hrBadge', 'peak');
+    const offIcon = this.getElementOffset(config, widgetKey, 'icon');
+    const offLabel = this.getElementOffset(config, widgetKey, 'label');
+    const offVal = this.getElementOffset(config, widgetKey, 'val');
+    const offUnit = this.getElementOffset(config, widgetKey, 'unit');
+    const offPeak = this.getElementOffset(config, widgetKey, 'peak');
 
     const isLive = activity.isAnimated && activity.progress < 0.999;
-    const labelOverride = this.getTextOverride(config, 'hrBadge', 'label', null);
-    const unitOverride = this.getTextOverride(config, 'hrBadge', 'unit', 'BPM');
+    const labelOverride = this.getTextOverride(config, widgetKey, 'label', null);
+    const unitOverride = this.getTextOverride(config, widgetKey, 'unit', 'BPM');
+
+    if (design === 'centered-heart-crest') {
+      // Centered Heart Crest (Glowing Heart & Centered BPM)
+      const crestH = customH || 95;
+      this.recordBounds(widgetKey, 'Avg HR Badge', x, y, width, crestH);
+      const effAlign = this.getWidgetAlign(align, 'center');
+      const cx = this.getAlignX(effAlign, x, width, 24, 'center');
+
+      this.drawRoundedRect(ctx, x, y, width, crestH, 20);
+      ctx.fillStyle = cardStyle === 'solid' ? '#1a0f14' : 'rgba(26, 15, 20, 0.9)';
+      ctx.fill();
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 1.5;
+      ctx.shadowColor = '#ef4444';
+      ctx.shadowBlur = 10;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // Top Centered Pulsing Heart
+      if (!offIcon.hidden) {
+        ctx.save();
+        this.applyZDepth(ctx, offIcon.z);
+        ctx.textAlign = 'center';
+        ctx.font = '22px sans-serif';
+        ctx.fillText('❤️', cx + offIcon.x, y + 26 + offIcon.y);
+        ctx.restore();
+      }
+
+      // Center Big BPM Value
+      if (!offVal.hidden) {
+        ctx.save();
+        this.applyZDepth(ctx, offVal.z);
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#ffffff';
+        ctx.font = this.getSubPartFont(config, widgetKey, 'val', 'bold', 34);
+        ctx.shadowColor = '#ef4444';
+        ctx.shadowBlur = 8;
+        ctx.fillText(`${activity.avgHr} ${unitOverride}`, cx + offVal.x, y + 62 + offVal.y);
+        ctx.restore();
+      }
+
+      // Bottom Centered Label / Zone Pill
+      if (!offLabel.hidden) {
+        ctx.save();
+        this.applyZDepth(ctx, offLabel.z);
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#fca5a5';
+        ctx.font = this.getSubPartFont(config, widgetKey, 'label', 'bold', 10);
+        ctx.letterSpacing = '1px';
+        const defaultLabel = isLive ? 'LIVE HEART RATE' : (activity.maxHr ? `AVG HR • PEAK ${activity.maxHr}` : 'AVG HEART RATE');
+        const badgeLabel = labelOverride || defaultLabel;
+        ctx.fillText(badgeLabel.toUpperCase(), cx + offLabel.x, y + 80 + offLabel.y);
+        ctx.restore();
+      }
+
+      ctx.restore();
+      return y + crestH;
+    }
 
     if (design === 'zone-badge') {
       // Style 5: Multi-Zone Telemetry Capsule
       const cardH = customH || 86;
-      this.drawWidgetCardBg(ctx, 'hrBadge', x, y, width, cardH, config, theme, true);
+      this.drawWidgetCardBg(ctx, widgetKey, x, y, width, cardH, config, theme, true);
 
       // Determine Zone based on avgHr
       const hr = activity.avgHr;
@@ -5795,7 +7295,7 @@ export class OverlayRenderer {
         this.applyZDepth(ctx, offLabel.z);
         ctx.textAlign = 'left';
         ctx.fillStyle = theme.textMuted;
-        ctx.font = this.getSubPartFont(config, 'hrBadge', 'label', 'bold', 11);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'label', 'bold', 11);
         ctx.letterSpacing = '1px';
         const defaultHrLabel = isLive ? 'LIVE HEART RATE' : 'HEART RATE INTENSITY';
         ctx.fillText(labelOverride || defaultHrLabel, x + 20 + offLabel.x, y + 28 + offLabel.y);
@@ -5807,7 +7307,7 @@ export class OverlayRenderer {
         ctx.save();
         this.applyZDepth(ctx, offVal.z);
         ctx.fillStyle = '#ffffff';
-        ctx.font = this.getSubPartFont(config, 'hrBadge', 'val', '900', 36);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'val', '900', 36);
         ctx.fillText(`${activity.avgHr}`, x + 20 + offVal.x, y + 68 + offVal.y);
         ctx.restore();
       }
@@ -5818,7 +7318,7 @@ export class OverlayRenderer {
         this.applyZDepth(ctx, offUnit.z);
         const valW = offVal.hidden ? 0 : ctx.measureText(`${activity.avgHr}`).width;
         ctx.fillStyle = zoneCol;
-        ctx.font = this.getSubPartFont(config, 'hrBadge', 'unit', 'bold', 16);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'unit', 'bold', 16);
         ctx.fillText(unitOverride, x + 24 + valW + offUnit.x, y + 66 + offUnit.y);
         ctx.restore();
       }
@@ -5840,9 +7340,9 @@ export class OverlayRenderer {
 
         ctx.textAlign = 'center';
         ctx.fillStyle = zoneCol;
-        ctx.font = this.getSubPartFont(config, 'hrBadge', 'peak', '900', 11);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'peak', '900', 11);
         const defaultZoneText = `ZONE ${zoneNum} • ${zoneName}`;
-        const zoneText = this.getTextOverride(config, 'hrBadge', 'peak', defaultZoneText);
+        const zoneText = this.getTextOverride(config, widgetKey, 'peak', defaultZoneText);
         ctx.fillText(zoneText, tagX + tagW / 2, tagY + 16);
         ctx.restore();
       }
@@ -5899,7 +7399,7 @@ export class OverlayRenderer {
         this.applyZDepth(ctx, offLabel.z);
         ctx.textAlign = 'left';
         ctx.fillStyle = '#00f5d4';
-        ctx.font = this.getSubPartFont(config, 'hrBadge', 'label', 'bold', 11);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'label', 'bold', 11);
         ctx.letterSpacing = '1.5px';
         ctx.fillText(labelOverride || 'CARDIAC PULSE TELEMETRY', x + 38 + offLabel.x, y + 30 + offLabel.y);
         ctx.restore();
@@ -5910,7 +7410,7 @@ export class OverlayRenderer {
         this.applyZDepth(ctx, offVal.z);
         ctx.textAlign = 'left';
         ctx.fillStyle = '#ffffff';
-        ctx.font = this.getSubPartFont(config, 'hrBadge', 'val', '900', 36);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'val', '900', 36);
         ctx.fillText(`${activity.avgHr}`, x + 24 + offVal.x, y + 68 + offVal.y);
         ctx.restore();
       }
@@ -5920,7 +7420,7 @@ export class OverlayRenderer {
         this.applyZDepth(ctx, offUnit.z);
         const valW = offVal.hidden ? 0 : ctx.measureText(`${activity.avgHr}`).width;
         ctx.fillStyle = '#00f5d4';
-        ctx.font = this.getSubPartFont(config, 'hrBadge', 'unit', 'bold', 16);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'unit', 'bold', 16);
         ctx.fillText(unitOverride, x + 28 + valW + offUnit.x, y + 66 + offUnit.y);
         ctx.restore();
       }
@@ -5930,9 +7430,9 @@ export class OverlayRenderer {
         this.applyZDepth(ctx, offPeak.z);
         ctx.textAlign = 'right';
         ctx.fillStyle = '#94a3b8';
-        ctx.font = this.getSubPartFont(config, 'hrBadge', 'peak', 'bold', 12);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'peak', 'bold', 12);
         const peakDefault = `PEAK: ${activity.maxHr} ${unitOverride}`;
-        const peakText = this.getTextOverride(config, 'hrBadge', 'peak', peakDefault);
+        const peakText = this.getTextOverride(config, widgetKey, 'peak', peakDefault);
         ctx.fillText(peakText, x + width - 20 + offPeak.x, y + 66 + offPeak.y);
         ctx.restore();
       }
@@ -5945,7 +7445,7 @@ export class OverlayRenderer {
     if (design === 'vertical-hr-thermometer') {
       // Style: Vertical Zone Thermometer (5-Zone Meter Column)
       const cardH = customH || 86;
-      this.drawWidgetCardBg(ctx, 'hrBadge', x, y, width, cardH, config, theme, true);
+      this.drawWidgetCardBg(ctx, widgetKey, x, y, width, cardH, config, theme, true);
 
       // Meter on right
       const meterW = 10;
@@ -5968,15 +7468,15 @@ export class OverlayRenderer {
 
       ctx.save();
       this.applyZDepth(ctx, offVal.z);
-      ctx.fillStyle = this.getSubPartColor(config, 'hrBadge', 'val', text);
-      ctx.font = this.getSubPartFont(config, 'hrBadge', 'val', 'bold', 28);
+      ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'val', text);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'val', 'bold', 28);
       ctx.fillText(String(activity.avgHr), x + 44 + offVal.x, y + 42 + offVal.y);
       ctx.restore();
 
       ctx.save();
       this.applyZDepth(ctx, offLabel.z);
-      ctx.fillStyle = this.getSubPartColor(config, 'hrBadge', 'label', textMuted);
-      ctx.font = this.getSubPartFont(config, 'hrBadge', 'label', 'bold', 10);
+      ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'label', textMuted);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'label', 'bold', 10);
       const defaultThermometerLabel = isLive ? 'LIVE HEART RATE' : 'AVG HEART RATE';
       ctx.fillText(labelOverride || defaultThermometerLabel, x + 16 + offLabel.x, y + 66 + offLabel.y);
       ctx.restore();
@@ -5988,7 +7488,7 @@ export class OverlayRenderer {
     if (design === 'tactical-ecg-card') {
       // Style: ECG Telemetry Strip (Oscilloscope CRT Strip)
       const cardH = customH || 68;
-      this.drawWidgetCardBg(ctx, 'hrBadge', x, y, width, cardH, config, theme, true);
+      this.drawWidgetCardBg(ctx, widgetKey, x, y, width, cardH, config, theme, true);
 
       // Oscilloscope ECG wave in background
       const waveX = x + 100;
@@ -6012,8 +7512,8 @@ export class OverlayRenderer {
 
       // Left BPM readout
       ctx.textAlign = 'left';
-      ctx.fillStyle = this.getSubPartColor(config, 'hrBadge', 'val', text);
-      ctx.font = this.getSubPartFont(config, 'hrBadge', 'val', 'bold', 24);
+      ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'val', text);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'val', 'bold', 24);
       ctx.fillText(`${activity.avgHr}`, x + 16, y + 36);
 
       ctx.fillStyle = elAccent;
@@ -6055,7 +7555,7 @@ export class OverlayRenderer {
         this.applyZDepth(ctx, offLabel.z);
         ctx.textAlign = 'left';
         ctx.fillStyle = theme.textMuted;
-        ctx.font = this.getSubPartFont(config, 'hrBadge', 'label', 'bold', 11);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'label', 'bold', 11);
         const defaultGaugeLabel = isLive ? 'LIVE HEART RATE' : 'HEART RATE ZONE';
         ctx.fillText(labelOverride || defaultGaugeLabel, x + 84 + offLabel.x, y + 30 + offLabel.y);
         ctx.restore();
@@ -6066,7 +7566,7 @@ export class OverlayRenderer {
         this.applyZDepth(ctx, offVal.z);
         ctx.textAlign = 'left';
         ctx.fillStyle = '#ffffff';
-        ctx.font = this.getSubPartFont(config, 'hrBadge', 'val', 'bold', 32);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'val', 'bold', 32);
         const valStr = offUnit.hidden ? `${activity.avgHr}` : `${activity.avgHr} ${unitOverride}`;
         ctx.fillText(valStr, x + 84 + offVal.x, y + 64 + offVal.y);
         ctx.restore();
@@ -6077,9 +7577,9 @@ export class OverlayRenderer {
         this.applyZDepth(ctx, offPeak.z);
         ctx.textAlign = 'right';
         ctx.fillStyle = '#fca5a5';
-        ctx.font = this.getSubPartFont(config, 'hrBadge', 'peak', 'bold', 13);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'peak', 'bold', 13);
         const peakDefault = `MAX ${activity.maxHr} ${unitOverride}`;
-        const peakText = this.getTextOverride(config, 'hrBadge', 'peak', peakDefault);
+        const peakText = this.getTextOverride(config, widgetKey, 'peak', peakDefault);
         ctx.fillText(peakText, x + width - 20 + offPeak.x, y + 46 + offPeak.y);
         ctx.restore();
       }
@@ -6102,7 +7602,7 @@ export class OverlayRenderer {
         this.applyZDepth(ctx, offIcon.z);
         ctx.textAlign = 'left';
         ctx.fillStyle = '#ef4444';
-        ctx.font = this.getSubPartFont(config, 'hrBadge', 'unit', 'bold', 16);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'unit', 'bold', 16);
         const tagIcon = offIcon.hidden ? '' : '❤️ ';
         const tagUnit = offUnit.hidden ? '' : unitOverride;
         ctx.fillText(`${tagIcon}${tagUnit}`.trim(), x + 16 + offIcon.x, y + h / 2 + 5 + offIcon.y);
@@ -6114,7 +7614,7 @@ export class OverlayRenderer {
         this.applyZDepth(ctx, offVal.z);
         ctx.textAlign = 'left';
         ctx.fillStyle = '#ffffff';
-        ctx.font = this.getSubPartFont(config, 'hrBadge', 'val', 'bold', 22);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'val', 'bold', 22);
         ctx.fillText(`${activity.avgHr}`, x + 82 + offVal.x, y + h / 2 + 6 + offVal.y);
         ctx.restore();
       }
@@ -6124,9 +7624,9 @@ export class OverlayRenderer {
         this.applyZDepth(ctx, offPeak.z);
         ctx.textAlign = 'right';
         ctx.fillStyle = '#fca5a5';
-        ctx.font = this.getSubPartFont(config, 'hrBadge', 'peak', 'bold', 12);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'peak', 'bold', 12);
         const peakDefault = `PEAK: ${activity.maxHr}`;
-        const peakText = this.getTextOverride(config, 'hrBadge', 'peak', peakDefault);
+        const peakText = this.getTextOverride(config, widgetKey, 'peak', peakDefault);
         ctx.fillText(peakText, x + width - 16 + offPeak.x, y + h / 2 + 5 + offPeak.y);
         ctx.restore();
       }
@@ -6143,7 +7643,7 @@ export class OverlayRenderer {
         this.applyZDepth(ctx, offLabel.z);
         ctx.textAlign = 'left';
         ctx.fillStyle = theme.textMuted;
-        ctx.font = this.getSubPartFont(config, 'hrBadge', 'label', 'bold', 12);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'label', 'bold', 12);
         const defaultCardLabel = isLive ? 'LIVE HEART RATE' : 'AVERAGE HEART RATE';
         ctx.fillText(labelOverride || defaultCardLabel, x + 20 + offLabel.x, y + 26 + offLabel.y);
         ctx.restore();
@@ -6154,7 +7654,7 @@ export class OverlayRenderer {
         this.applyZDepth(ctx, offVal.z);
         ctx.textAlign = 'left';
         ctx.fillStyle = '#ef4444';
-        ctx.font = this.getSubPartFont(config, 'hrBadge', 'val', 'bold', 38);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'val', 'bold', 38);
         ctx.fillText(`${activity.avgHr}`, x + 20 + offVal.x, y + 64 + offVal.y);
         ctx.restore();
       }
@@ -6164,7 +7664,7 @@ export class OverlayRenderer {
         this.applyZDepth(ctx, offUnit.z);
         ctx.textAlign = 'left';
         ctx.fillStyle = theme.text;
-        ctx.font = this.getSubPartFont(config, 'hrBadge', 'unit', 'bold', 18);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'unit', 'bold', 18);
         ctx.fillText(unitOverride, x + 90 + offUnit.x, y + 62 + offUnit.y);
         ctx.restore();
       }
@@ -6174,9 +7674,9 @@ export class OverlayRenderer {
         this.applyZDepth(ctx, offPeak.z);
         ctx.textAlign = 'right';
         ctx.fillStyle = theme.textMuted;
-        ctx.font = this.getSubPartFont(config, 'hrBadge', 'peak', '600', 13);
+        ctx.font = this.getSubPartFont(config, widgetKey, 'peak', '600', 13);
         const peakDefault = `PEAK: ${activity.maxHr} ${unitOverride}`;
-        const peakText = this.getTextOverride(config, 'hrBadge', 'peak', peakDefault);
+        const peakText = this.getTextOverride(config, widgetKey, 'peak', peakDefault);
         ctx.fillText(peakText, x + width - 20 + offPeak.x, y + 45 + offPeak.y);
         ctx.restore();
       }
@@ -6193,40 +7693,83 @@ export class OverlayRenderer {
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
-    if (!offIcon.hidden) {
-      ctx.save();
-      this.applyZDepth(ctx, offIcon.z);
-      ctx.textAlign = 'left';
-      ctx.fillStyle = '#ef4444';
-      ctx.font = this.getSubPartFont(config, 'hrBadge', 'icon', 'bold', 22);
-      ctx.fillText('❤️', x + 20 + offIcon.x, y + 37 + offIcon.y);
-      ctx.restore();
-    }
+    const effAlign = this.getWidgetAlign(align, 'left');
+    const isCenter = effAlign === 'center';
+    const isRight = effAlign === 'right';
 
-    if (!offVal.hidden || !offLabel.hidden || !offUnit.hidden) {
-      ctx.save();
-      this.applyZDepth(ctx, offVal.z);
-      ctx.textAlign = 'left';
-      ctx.fillStyle = '#ffffff';
-      ctx.font = this.getSubPartFont(config, 'hrBadge', 'val', 'bold', 20);
-      const defaultPillLabel = isLive ? 'LIVE HEART RATE' : 'AVG HEART RATE';
-      const labelPart = offLabel.hidden ? '' : (labelOverride || defaultPillLabel) + ': ';
-      const valPart = offVal.hidden ? '' : `${activity.avgHr} `;
-      const unitPart = offUnit.hidden ? '' : unitOverride;
-      ctx.fillText(`${labelPart}${valPart}${unitPart}`.trim(), x + 54 + offVal.x, y + 36 + offVal.y);
-      ctx.restore();
-    }
+    const defaultPillLabel = isLive ? 'LIVE HEART RATE' : 'AVG HEART RATE';
+    const labelPart = offLabel.hidden ? '' : (labelOverride || defaultPillLabel) + ': ';
+    const valPart = offVal.hidden ? '' : `${activity.avgHr} `;
+    const unitPart = offUnit.hidden ? '' : unitOverride;
+    const fullText = `${labelPart}${valPart}${unitPart}`.trim();
 
-    if (!offPeak.hidden) {
-      ctx.save();
-      this.applyZDepth(ctx, offPeak.z);
-      ctx.textAlign = 'right';
-      ctx.fillStyle = '#fca5a5';
-      ctx.font = this.getSubPartFont(config, 'hrBadge', 'peak', 'bold', 14);
-      const peakDefault = `MAX: ${activity.maxHr} ${unitOverride}`;
-      const peakText = this.getTextOverride(config, 'hrBadge', 'peak', peakDefault);
-      ctx.fillText(peakText, x + width - 24 + offPeak.x, y + 36 + offPeak.y);
-      ctx.restore();
+    if (isCenter) {
+      const cx = x + width / 2;
+      if (!offVal.hidden || !offLabel.hidden || !offUnit.hidden) {
+        ctx.save();
+        this.applyZDepth(ctx, offVal.z);
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#ffffff';
+        ctx.font = this.getSubPartFont(config, widgetKey, 'val', 'bold', 20);
+        const iconPrefix = offIcon.hidden ? '' : '❤️ ';
+        ctx.fillText(`${iconPrefix}${fullText}`, cx + offVal.x, y + 36 + offVal.y);
+        ctx.restore();
+      }
+    } else if (isRight) {
+      if (!offPeak.hidden) {
+        ctx.save();
+        this.applyZDepth(ctx, offPeak.z);
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#fca5a5';
+        ctx.font = this.getSubPartFont(config, widgetKey, 'peak', 'bold', 14);
+        const peakDefault = `MAX: ${activity.maxHr} ${unitOverride}`;
+        const peakText = this.getTextOverride(config, widgetKey, 'peak', peakDefault);
+        ctx.fillText(peakText, x + 24 + offPeak.x, y + 36 + offPeak.y);
+        ctx.restore();
+      }
+
+      if (!offVal.hidden || !offLabel.hidden || !offUnit.hidden) {
+        ctx.save();
+        this.applyZDepth(ctx, offVal.z);
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#ffffff';
+        ctx.font = this.getSubPartFont(config, widgetKey, 'val', 'bold', 20);
+        const iconPrefix = offIcon.hidden ? '' : '❤️ ';
+        ctx.fillText(`${iconPrefix}${fullText}`, x + width - 24 + offVal.x, y + 36 + offVal.y);
+        ctx.restore();
+      }
+    } else {
+      if (!offIcon.hidden) {
+        ctx.save();
+        this.applyZDepth(ctx, offIcon.z);
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#ef4444';
+        ctx.font = this.getSubPartFont(config, widgetKey, 'icon', 'bold', 22);
+        ctx.fillText('❤️', x + 20 + offIcon.x, y + 37 + offIcon.y);
+        ctx.restore();
+      }
+
+      if (!offVal.hidden || !offLabel.hidden || !offUnit.hidden) {
+        ctx.save();
+        this.applyZDepth(ctx, offVal.z);
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#ffffff';
+        ctx.font = this.getSubPartFont(config, widgetKey, 'val', 'bold', 20);
+        ctx.fillText(fullText, x + 54 + offVal.x, y + 36 + offVal.y);
+        ctx.restore();
+      }
+
+      if (!offPeak.hidden) {
+        ctx.save();
+        this.applyZDepth(ctx, offPeak.z);
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#fca5a5';
+        ctx.font = this.getSubPartFont(config, widgetKey, 'peak', 'bold', 14);
+        const peakDefault = `MAX: ${activity.maxHr} ${unitOverride}`;
+        const peakText = this.getTextOverride(config, widgetKey, 'peak', peakDefault);
+        ctx.fillText(peakText, x + width - 24 + offPeak.x, y + 36 + offPeak.y);
+        ctx.restore();
+      }
     }
 
     ctx.restore();
@@ -6236,19 +7779,44 @@ export class OverlayRenderer {
   // =========================================================================
   // WIDGET 11: HR ZONES BAR
   // =========================================================================
-  drawHrZonesBar(ctx, x, y, width, activity, config, theme, accent, customH = null) {
+  drawHrZonesBar(ctx, x, y, width, activity, config, theme, accent, customH = null, widgetKey = 'hrZones') {
     const zones = activity.hrZones;
     if (!zones) return y;
 
     ctx.save();
-    const font = this.getFontFamily(config.fontFamily);
-    const h = customH || 40;
-    this.recordBounds('hrZones', 'HR Zones Bar', x, y, width, h);
+    const elStyle = this.getElementStyle(config, widgetKey);
+    const { text, textMuted, accent: elAccent, align, opacity } = this.getEffectiveColors(config, theme, accent, widgetKey);
+    if (opacity < 1) ctx.globalAlpha = opacity;
+    accent = elAccent;
+
+    const font = this.getFontFamily(elStyle.fontFamily !== 'default' ? elStyle.fontFamily : config.fontFamily);
+    const h = customH || 48;
+    this.recordBounds(widgetKey, 'HR Zones Bar', x, y, width, h);
+
+    const effAlign = this.getWidgetAlign(align, 'left');
+    const isCenter = effAlign === 'center';
+    const isRight = effAlign === 'right';
 
     const pad = 12;
     const barW = width - pad * 2;
-    const barY = y + 16;
-    const barH = 12;
+    const barY = y + 20;
+    const barH = 10;
+
+    const offTitle = this.getElementOffset(config, widgetKey, 'title');
+    const defaultTitle = 'HEART RATE ZONES';
+    const titleText = this.getTextOverride(config, widgetKey, 'title', defaultTitle);
+
+    if (!offTitle.hidden && titleText) {
+      ctx.save();
+      this.applyZDepth(ctx, offTitle.z);
+      ctx.textAlign = isCenter ? 'center' : (isRight ? 'right' : 'left');
+      ctx.fillStyle = textMuted;
+      ctx.font = this.getSubPartFont(config, widgetKey, 'title', 'bold', 10);
+      ctx.letterSpacing = '1px';
+      const titleX = isCenter ? x + width / 2 : (isRight ? x + width - pad : x + pad);
+      ctx.fillText(titleText.toUpperCase(), titleX + offTitle.x, y + 12 + offTitle.y);
+      ctx.restore();
+    }
 
     const colors = ['#3b82f6', '#10b981', '#f59e0b', '#f97316', '#ef4444'];
     let curX = x + pad;
@@ -6357,16 +7925,16 @@ export class OverlayRenderer {
     return y + h;
   }
 
-  drawBrandWatermark(ctx, x, y, width, config, theme, accent, customH = null) {
+  drawBrandWatermark(ctx, x, y, width, config, theme, accent, customH = null, widgetKey = 'brand') {
     ctx.save();
-    const elStyle = this.getElementStyle(config, 'brand');
-    const { text, textMuted, accent: elAccent, align, opacity } = this.getEffectiveColors(config, theme, accent, 'brand');
+    const elStyle = this.getElementStyle(config, widgetKey);
+    const { text, textMuted, accent: elAccent, align, opacity } = this.getEffectiveColors(config, theme, accent, widgetKey);
     if (opacity < 1) ctx.globalAlpha = opacity;
     accent = elAccent;
 
     const font = this.getFontFamily(elStyle.fontFamily !== 'default' ? elStyle.fontFamily : config.fontFamily);
-    const h = customH || 24;
-    this.recordBounds('brand', 'Watermark / Brand', x, y - 14, width, h);
+    const h = customH || 28;
+    this.recordBounds(widgetKey, 'Watermark / Brand', x, y - 14, width, h);
 
     const brandStyle = config.brandStyle || 'runcut';
     let brandText = '⚡ RUNOVERLAY';
@@ -6379,23 +7947,55 @@ export class OverlayRenderer {
       brandText = config.customWatermark.toUpperCase();
     }
 
-    brandText = this.getTextOverride(config, 'brand', 'text', brandText);
+    brandText = this.getTextOverride(config, widgetKey, 'text', brandText);
 
-    const offText = this.getElementOffset(config, 'brand', 'text');
+    const offText = this.getElementOffset(config, widgetKey, 'text');
     if (offText.hidden) {
       ctx.restore();
       return;
     }
 
+    const effAlign = this.getWidgetAlign(align, 'center');
+    const bx = this.getAlignX(effAlign, x, width, 16, 'center');
+
+    if (brandStyle === 'centered-cinematic-stamp') {
+      // Centered Cinematic Stamp
+      this.applyZDepth(ctx, offText.z);
+      ctx.textAlign = 'center';
+      ctx.font = this.getSubPartFont(config, widgetKey, 'text', 'bold', 11);
+      ctx.letterSpacing = '3px';
+      ctx.fillStyle = elAccent;
+      ctx.shadowColor = elAccent;
+      ctx.shadowBlur = 8;
+      ctx.fillText(`◆  ${brandText}  ◆`, bx + offText.x, y + offText.y);
+      ctx.shadowBlur = 0;
+      ctx.restore();
+      return;
+    }
+
     this.applyZDepth(ctx, offText.z);
-    ctx.textAlign = 'center';
-    ctx.font = this.getSubPartFont(config, 'brand', 'text', 'bold', 12);
+    ctx.textAlign = effAlign;
+    ctx.font = this.getSubPartFont(config, widgetKey, 'text', 'bold', 12);
     ctx.letterSpacing = '2px';
     const brandDefColor = config.brandStyle === 'strava' ? '#fc5200' : 'rgba(255, 255, 255, 0.6)';
-    ctx.fillStyle = this.getSubPartColor(config, 'brand', 'text', brandDefColor);
+    ctx.fillStyle = this.getSubPartColor(config, widgetKey, 'text', brandDefColor);
     ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
     ctx.shadowBlur = 6;
-    ctx.fillText(brandText, x + width / 2 + offText.x, y + offText.y);
+    ctx.fillText(brandText, bx + offText.x, y + offText.y);
+
+    const subtext = this.getTextOverride(config, widgetKey, 'subtext', '');
+    const offSubtext = this.getElementOffset(config, widgetKey, 'subtext');
+    if (!offSubtext.hidden && subtext) {
+      ctx.save();
+      this.applyZDepth(ctx, offSubtext.z);
+      ctx.textAlign = effAlign;
+      ctx.font = this.getSubPartFont(config, widgetKey, 'subtext', '500', 10);
+      ctx.letterSpacing = '1px';
+      ctx.fillStyle = textMuted;
+      ctx.shadowBlur = 0;
+      ctx.fillText(subtext, bx + offSubtext.x, y + 14 + offSubtext.y);
+      ctx.restore();
+    }
 
     ctx.restore();
   }
@@ -6403,6 +8003,98 @@ export class OverlayRenderer {
   // =========================================================================
   // CUSTOM TEXTS & STICKERS RENDERER
   // =========================================================================
+
+  renderExtraWidgetInstances(ctx, baseW, baseH, activity, config, theme, accent) {
+    if (!config.extraWidgetInstances || !Array.isArray(config.extraWidgetInstances)) return;
+
+    config.extraWidgetInstances.forEach((inst, idx) => {
+      if (inst.enabled === false) return;
+      const widgetKey = inst.id;
+      const category = inst.category;
+      const instConfig = { ...config, ...(inst.options || {}) };
+
+      const defaultPad = 40;
+      const defaultW = Math.min(baseW - defaultPad * 2, 420);
+      const defaultY = Math.min(baseH - 250, 180 + idx * 110);
+      const defaultX = Math.max(defaultPad, Math.round((baseW - defaultW) / 2));
+
+      switch (category) {
+        case 'hero': {
+          const heroH = instConfig.heroDesign === 'mega' ? 160 : 120;
+          const pos = this.getWidgetPos(instConfig, widgetKey, defaultX, defaultY, defaultW, heroH);
+          this.drawHeroStat(ctx, pos.x, pos.y, pos.width, activity, instConfig, theme, accent, pos.height, widgetKey);
+          break;
+        }
+        case 'metrics': {
+          const metH = 90;
+          const pos = this.getWidgetPos(instConfig, widgetKey, defaultX, defaultY, defaultW, metH);
+          this.drawMetricsGrid(ctx, pos.x, pos.y, pos.width, activity, instConfig, theme, accent, 3, pos.height, widgetKey);
+          break;
+        }
+        case 'splits': {
+          const chartH = 150;
+          const pos = this.getWidgetPos(instConfig, widgetKey, defaultX, defaultY, defaultW, chartH);
+          this.drawSplitsBarChart(ctx, pos.x, pos.y, pos.width, activity, instConfig, theme, accent, pos.height, widgetKey);
+          break;
+        }
+        case 'splitHighlight': {
+          const hlH = 100;
+          const pos = this.getWidgetPos(instConfig, widgetKey, defaultX, defaultY, defaultW, hlH);
+          this.drawSplitHighlightCard(ctx, pos.x, pos.y, pos.width, activity, instConfig, theme, accent, pos.height, widgetKey);
+          break;
+        }
+        case 'elevation': {
+          const elevH = 110;
+          const pos = this.getWidgetPos(instConfig, widgetKey, defaultX, defaultY, defaultW, elevH);
+          this.drawElevationProfile(ctx, pos.x, pos.y, pos.width, pos.height, activity, instConfig, theme, accent, widgetKey);
+          break;
+        }
+        case 'paceGraph': {
+          const pgH = 110;
+          const pos = this.getWidgetPos(instConfig, widgetKey, defaultX, defaultY, defaultW, pgH);
+          this.drawPaceGraph(ctx, pos.x, pos.y, pos.width, pos.height, activity, instConfig, theme, accent, widgetKey);
+          break;
+        }
+        case 'hrGraph': {
+          const hrH = 110;
+          const pos = this.getWidgetPos(instConfig, widgetKey, defaultX, defaultY, defaultW, hrH);
+          this.drawHeartRateGraph(ctx, pos.x, pos.y, pos.width, pos.height, activity, instConfig, theme, accent, widgetKey);
+          break;
+        }
+        case 'hrBadge': {
+          const hbH = 70;
+          const pos = this.getWidgetPos(instConfig, widgetKey, defaultX, defaultY, Math.min(defaultW, 200), hbH);
+          this.drawAvgHeartRateBadge(ctx, pos.x, pos.y, pos.width, activity, instConfig, theme, accent, pos.height, widgetKey);
+          break;
+        }
+        case 'hrZones': {
+          const hzH = 130;
+          const pos = this.getWidgetPos(instConfig, widgetKey, defaultX, defaultY, defaultW, hzH);
+          this.drawHrZonesBar(ctx, pos.x, pos.y, pos.width, activity, instConfig, theme, accent, pos.height, widgetKey);
+          break;
+        }
+        case 'map': {
+          const mapH = 260;
+          const pos = this.getWidgetPos(instConfig, widgetKey, defaultX, defaultY, defaultW, mapH);
+          this.drawRouteMap(ctx, pos.x, pos.y, pos.width, pos.height, activity, instConfig, theme, accent, widgetKey);
+          break;
+        }
+        case 'brand': {
+          const brandH = 50;
+          const pos = this.getWidgetPos(instConfig, widgetKey, defaultX, defaultY, defaultW, brandH);
+          this.drawBrandWatermark(ctx, pos.x, pos.y, pos.width, instConfig, theme, accent, pos.height, widgetKey);
+          break;
+        }
+        case 'header': {
+          const headH = 120;
+          const pos = this.getWidgetPos(instConfig, widgetKey, defaultX, defaultY, defaultW, headH);
+          this.drawHeader(ctx, pos.x, pos.y, pos.width, activity, instConfig, theme, accent, pos.height, widgetKey);
+          break;
+        }
+      }
+    });
+  }
+
   drawCustomTexts(ctx, w, h, customTexts, theme, accent) {
     if (!customTexts || !Array.isArray(customTexts) || customTexts.length === 0) return;
 

@@ -526,7 +526,7 @@ export class VideoAnimator {
       document.body.appendChild(exportCanvas);
     }
 
-    const ratioSpec = this.renderer.getAspectRatioDimensions ? this.renderer.getAspectRatioDimensions(this.state.config.aspectRatio) : { width: 1080, height: 1920 };
+    const ratioSpec = this.renderer.getAspectRatioDimensions ? this.renderer.getAspectRatioDimensions(this.state.config.aspectRatio, this.state.config) : { width: 1080, height: 1920 };
     exportCanvas.width = ratioSpec.width * scale;
     exportCanvas.height = ratioSpec.height * scale;
 

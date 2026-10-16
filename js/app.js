@@ -18,6 +18,8 @@ const state = {
   isInteractiveLayout: true, // Interactive drag/resize mode on canvas
   config: {
     aspectRatio: '9:16',
+    customWidth: 1080,
+    customHeight: 1080,
     template: 'story-pro',
     bgType: 'solid', // solid, photo, gradient, transparent
     solidBgColor: '#0a0a0d',
@@ -104,18 +106,22 @@ const state = {
     splitCustomLabels: {},
     // Universal Widget Text Overrides
     widgetTextOverrides: {
-      hero: { label: '', value: '', unit: '' },
+      hero: { label: '', value: '', unit: '', secondary: '' },
       header: { title: '', subtitle: '', runner: '', location: '', weather: '' },
-      splits: { title: '', headerSplit: '', headerTime: '', headerPace: '', headerDelta: '', headerHr: '', headerMaxHr: '', headerMinHr: '', headerCad: '', headerElev: '' },
+      splits: { title: '', headerSplit: '', headerTime: '', headerPace: '', headerDelta: '', headerHr: '', headerMaxHr: '', headerMinHr: '', headerCad: '', headerElev: '', badge: '' },
+      splitHighlight: { title: '', label: '', pace: '', note: '', badge: '' },
       metrics: { distance: '', time: '', pace: '', hr: '', elevation: '', cadence: '', calories: '', bestPace: '' },
-      paceGraph: { title: '' },
-      hrGraph: { title: '' },
-      elevation: { title: '' },
-      hrBadge: { label: '', unit: '' },
-      brand: { text: '' },
+      elevation: { title: '', min: '', max: '', gain: '' },
+      paceGraph: { title: '', min: '', avg: '', max: '' },
+      hrGraph: { title: '', min: '', avg: '', max: '' },
+      hrBadge: { label: '', unit: '', zone: '' },
+      hrZones: { title: '', z1: '', z2: '', z3: '', z4: '', z5: '' },
+      brand: { text: '', subtext: '' },
+      map: { title: '', caption: '' },
     },
     // Custom Text Stickers
     customTexts: [],
+    extraWidgetInstances: [],
     // Custom Widget Positions & Sizes
     widgetPositions: {},
     // Individual Element Styles Overrides (font, sizeScale, color, accentColor, textAlign, cardStyle, opacity)
@@ -235,8 +241,24 @@ function syncAllControlsWithConfig() {
 
   // 1. Aspect Ratio
   const aspectPill = document.getElementById('aspectRatioPill');
-  if (aspectPill) {
-    aspectPill.textContent = ASPECT_RATIOS[cfg.aspectRatio]?.label.split(' ')[0] || cfg.aspectRatio;
+  const customBox = document.getElementById('customAspectRatioBox');
+  const customW = document.getElementById('customWidthInput');
+  const customH = document.getElementById('customHeightInput');
+  const customRatioLabel = document.getElementById('customRatioCalculatedLabel');
+
+  if (cfg.aspectRatio === 'custom') {
+    if (customBox) customBox.style.display = 'block';
+    if (customW) customW.value = cfg.customWidth || 1080;
+    if (customH) customH.value = cfg.customHeight || 1080;
+    const w = cfg.customWidth || 1080;
+    const h = cfg.customHeight || 1080;
+    if (customRatioLabel) customRatioLabel.textContent = `${w} × ${h}`;
+    if (aspectPill) aspectPill.textContent = `Custom (${w}×${h})`;
+  } else {
+    if (customBox) customBox.style.display = 'none';
+    if (aspectPill) {
+      aspectPill.textContent = ASPECT_RATIOS[cfg.aspectRatio]?.label.split(' ')[0] || cfg.aspectRatio;
+    }
   }
   updateActiveCard('#aspectRatioGrid', 'data-ratio', cfg.aspectRatio);
 
@@ -248,6 +270,12 @@ function syncAllControlsWithConfig() {
     'stat-beast': 'Stat Beast',
     'route-focus': 'Route Focus',
     'lap-workout': 'Lap Workout',
+    'kinetic-centered': 'Kinetic Centered',
+    'marathon-finisher': 'Marathon Finisher',
+    'tokyo-night': 'Tokyo Night HUD',
+    'ultra-trail': 'Ultra Trail Ridge',
+    'swiss-editorial': 'Swiss Athletic',
+    'smartwatch-ultra': 'Watch Face Modular',
   };
   const templatePill = document.getElementById('templatePill');
   if (templatePill) {
@@ -356,6 +384,9 @@ function syncAllControlsWithConfig() {
   updateActiveCard('#splitSourceGrid', 'data-source', cfg.splitDataSource || 'auto');
   updateActiveCard('#splitWidgetModeGrid', 'data-mode', cfg.splitWidgetMode || 'bars');
   updateActiveCard('#headerTemplateGrid', 'data-template', cfg.headerTemplate || cfg.headerDesign || 'modern');
+  if (window.renderActiveHeaderTemplateTextControls) {
+    window.renderActiveHeaderTemplateTextControls();
+  }
 }
 
 function deleteSelectedTarget(targetKey = null) {
@@ -419,7 +450,20 @@ function deleteSelectedTarget(targetKey = null) {
     return;
   }
 
-  // 4. Default: Delete (hide) the entire widget
+  // 4. Check if it's an extra widget instance
+  const extraInst = state.config.extraWidgetInstances?.find((inst) => inst.id === key);
+  if (extraInst) {
+    extraInst.enabled = false;
+    if (typeof renderExtraWidgetsUI === 'function') renderExtraWidgetsUI();
+    triggerRender();
+    if (window.syncInspectorWithSelectedElement) {
+      window.syncInspectorWithSelectedElement(key, 'widget');
+    }
+    showToast(`Deleted / hid ${extraInst.name || key}`);
+    return;
+  }
+
+  // 5. Default: Delete (hide) the entire widget
   const showKey = 'showWidget' + key.charAt(0).toUpperCase() + key.slice(1);
   if (showKey in state.config) {
     state.config[showKey] = false;
@@ -434,6 +478,7 @@ function deleteSelectedTarget(targetKey = null) {
     showToast(`Deselected ${key}`);
   }
 }
+window.deleteSelectedTarget = deleteSelectedTarget;
 
 function restoreWidgetToTemplate(targetKey = null) {
   const key = targetKey || state.selectedWidget;
@@ -1170,16 +1215,45 @@ function syncInputsWithActivity(act) {
 // 3. FORMAT & TEMPLATES CONTROLS
 // ==========================================
 function setupFormatControls() {
+  const customBox = document.getElementById('customAspectRatioBox');
+  const customWInput = document.getElementById('customWidthInput');
+  const customHInput = document.getElementById('customHeightInput');
+  const swapBtn = document.getElementById('swapDimensionsBtn');
+  const customRatioLabel = document.getElementById('customRatioCalculatedLabel');
+
+  const updateCustomLabel = (w, h) => {
+    if (customRatioLabel) {
+      customRatioLabel.textContent = `${w} × ${h} px`;
+    }
+  };
+
   // Aspect Ratios
   setupCardGrid('#aspectRatioGrid', 'data-ratio', (ratio) => {
     pushUndoSnapshot();
     state.config.aspectRatio = ratio;
-    document.getElementById('aspectRatioPill').textContent = ASPECT_RATIOS[ratio]?.label.split(' ')[0] || ratio;
+    if (ratio === 'custom') {
+      if (customBox) customBox.style.display = 'block';
+      const w = parseInt(customWInput ? customWInput.value : 1080, 10) || 1080;
+      const h = parseInt(customHInput ? customHInput.value : 1080, 10) || 1080;
+      state.config.customWidth = w;
+      state.config.customHeight = h;
+      updateCustomLabel(w, h);
+      document.getElementById('aspectRatioPill').textContent = `Custom (${w}×${h})`;
+    } else {
+      if (customBox) customBox.style.display = 'none';
+      document.getElementById('aspectRatioPill').textContent = ASPECT_RATIOS[ratio]?.label.split(' ')[0] || ratio;
+    }
+
     if (renderer.bgImage && state.config.bgType === 'photo') {
       const img = renderer.bgImage;
       const imgAspect = img.width / img.height;
-      const [rw, rh] = ratio.split(':').map(Number);
-      const canvasAspect = (rw && rh) ? rw / rh : 9 / 16;
+      let canvasAspect = 9 / 16;
+      if (ratio === 'custom') {
+        canvasAspect = (state.config.customWidth || 1080) / (state.config.customHeight || 1080);
+      } else {
+        const [rw, rh] = ratio.split(':').map(Number);
+        if (rw && rh) canvasAspect = rw / rh;
+      }
       const isRatioSimilar = Math.abs(imgAspect - canvasAspect) / Math.max(imgAspect, canvasAspect) < 0.05;
       if (!isRatioSimilar && state.config.photoFit !== 'cover') {
         state.config.photoFit = 'fit';
@@ -1187,6 +1261,66 @@ function setupFormatControls() {
       syncPhotoSliders();
     }
     triggerRender();
+  });
+
+  // Custom Aspect Ratio Inputs
+  if (customWInput) {
+    customWInput.addEventListener('input', (e) => {
+      const val = Math.max(300, Math.min(4000, parseInt(e.target.value, 10) || 1080));
+      state.config.customWidth = val;
+      updateCustomLabel(val, state.config.customHeight || 1080);
+      if (state.config.aspectRatio === 'custom') {
+        document.getElementById('aspectRatioPill').textContent = `Custom (${val}×${state.config.customHeight || 1080})`;
+      }
+      triggerRender();
+    });
+  }
+
+  if (customHInput) {
+    customHInput.addEventListener('input', (e) => {
+      const val = Math.max(300, Math.min(4000, parseInt(e.target.value, 10) || 1080));
+      state.config.customHeight = val;
+      updateCustomLabel(state.config.customWidth || 1080, val);
+      if (state.config.aspectRatio === 'custom') {
+        document.getElementById('aspectRatioPill').textContent = `Custom (${state.config.customWidth || 1080}×${val})`;
+      }
+      triggerRender();
+    });
+  }
+
+  if (swapBtn) {
+    swapBtn.addEventListener('click', () => {
+      pushUndoSnapshot();
+      const oldW = state.config.customWidth || 1080;
+      const oldH = state.config.customHeight || 1080;
+      state.config.customWidth = oldH;
+      state.config.customHeight = oldW;
+      if (customWInput) customWInput.value = oldH;
+      if (customHInput) customHInput.value = oldW;
+      updateCustomLabel(oldH, oldW);
+      if (state.config.aspectRatio === 'custom') {
+        document.getElementById('aspectRatioPill').textContent = `Custom (${oldH}×${oldW})`;
+      }
+      triggerRender();
+    });
+  }
+
+  document.querySelectorAll('.quick-ratio-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      pushUndoSnapshot();
+      const w = parseInt(btn.dataset.w, 10);
+      const h = parseInt(btn.dataset.h, 10);
+      state.config.customWidth = w;
+      state.config.customHeight = h;
+      if (customWInput) customWInput.value = w;
+      if (customHInput) customHInput.value = h;
+      updateCustomLabel(w, h);
+      state.config.aspectRatio = 'custom';
+      updateActiveCard('#aspectRatioGrid', 'data-ratio', 'custom');
+      if (customBox) customBox.style.display = 'block';
+      document.getElementById('aspectRatioPill').textContent = `Custom (${w}×${h})`;
+      triggerRender();
+    });
   });
 
   // Templates
@@ -1199,6 +1333,12 @@ function setupFormatControls() {
       'stat-beast': 'Stat Beast',
       'route-focus': 'Route Focus',
       'lap-workout': 'Lap Workout',
+      'kinetic-centered': 'Kinetic Centered',
+      'marathon-finisher': 'Marathon Finisher',
+      'tokyo-night': 'Tokyo Night HUD',
+      'ultra-trail': 'Ultra Trail Ridge',
+      'swiss-editorial': 'Swiss Athletic',
+      'smartwatch-ultra': 'Watch Face Modular',
     };
     document.getElementById('templatePill').textContent = templateNames[template] || template;
     triggerRender();
@@ -1244,6 +1384,8 @@ function saveTemplatesToStorage(templates) {
 function extractTemplateConfig(cfg) {
   return {
     aspectRatio: cfg.aspectRatio || '9:16',
+    customWidth: cfg.customWidth || 1080,
+    customHeight: cfg.customHeight || 1080,
     template: cfg.template || 'story-pro',
     theme: cfg.theme || 'cyber',
     customAccentColor: cfg.customAccentColor || null,
@@ -1887,6 +2029,19 @@ function setupWidgetsControls() {
     }
   });
 
+  // Multi-Instance Widgets Add Button Handler
+  const addNewWidgetBtn = document.getElementById('addNewWidgetBtn');
+  if (addNewWidgetBtn) {
+    addNewWidgetBtn.addEventListener('click', () => {
+      const catSelect = document.getElementById('newWidgetCategorySelect');
+      const cat = catSelect ? catSelect.value : 'hero';
+      window.addNewWidgetInstance(cat);
+    });
+  }
+
+  window.renderExtraWidgetsUI();
+  window.refreshInspectorElementDropdown();
+
   // Widget Design Variants Dropdowns
   const designBinds = [
     { id: 'headerDesignSelect', key: 'headerDesign' },
@@ -1973,6 +2128,143 @@ function setupHeaderTemplateControls() {
   const grid = document.getElementById('headerTemplateGrid');
   const select = document.getElementById('headerDesignSelect');
 
+  const renderActiveHeaderTemplateTextControls = () => {
+    const container = document.getElementById('headerTemplateCustomTextContainer');
+    const fieldsContainer = document.getElementById('headerTemplateCustomFields');
+    const badge = document.getElementById('textTabActiveTemplateBadge');
+    if (!container || !fieldsContainer) return;
+
+    const tmpl = state.config.headerTemplate || state.config.headerDesign || 'modern';
+    if (!state.config.widgetTextOverrides) state.config.widgetTextOverrides = {};
+    if (!state.config.widgetTextOverrides.header) state.config.widgetTextOverrides.header = {};
+    const overrides = state.config.widgetTextOverrides.header;
+
+    const tmplNames = {
+      'modern': 'Modern Minimalist',
+      'magazine-cover': 'Magazine Headline',
+      'retro-cyber': 'Cyberpunk HUD',
+      'minimalist-stamp': 'Passport Stamp',
+      'hud-flight': 'Flight Telemetry HUD',
+      'running-bib-header': 'Marathon Race Bib',
+      'broadcast-lowerthird': 'Broadcast Lower Third',
+      'badge-shield': 'Trophy Crest Shield',
+      'pill': 'Dynamic Glass Pill',
+      'athletic': 'Athletic Sport HUD',
+      'architect-monolith': 'Architectural Calendar',
+      'circular-monogram': 'Circular Monogram Seal',
+    };
+    if (badge) badge.textContent = tmplNames[tmpl] || tmpl;
+
+    fieldsContainer.innerHTML = '';
+
+    const addTmplField = (partKey, label, defaultVal, currentVal) => {
+      const fieldDiv = document.createElement('div');
+      fieldDiv.className = 'form-group';
+      fieldDiv.style.marginBottom = '8px';
+
+      const isDel = window.isElementDeleted ? window.isElementDeleted('header', partKey) : false;
+
+      const labelRow = document.createElement('div');
+      labelRow.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;';
+
+      const lbl = document.createElement('label');
+      lbl.style.cssText = 'font-size: 0.72rem; color: var(--text-muted); font-weight: 600; display:flex; align-items:center; gap:4px;';
+      lbl.textContent = label;
+      labelRow.appendChild(lbl);
+
+      if (isDel) {
+        const delTag = document.createElement('span');
+        delTag.style.cssText = 'font-size: 0.65rem; color: #ef4444; font-weight: 700;';
+        delTag.textContent = '[Deleted]';
+        lbl.appendChild(delTag);
+
+        const reinBtn = document.createElement('button');
+        reinBtn.type = 'button';
+        reinBtn.className = 'btn btn-secondary';
+        reinBtn.style.cssText = 'padding: 1px 6px; font-size: 0.65rem; color: #10b981; border-color: rgba(16,185,129,0.3); font-weight: 700; cursor: pointer;';
+        reinBtn.textContent = '➕ Reintroduce';
+        reinBtn.addEventListener('click', () => {
+          if (window.reintroduceElement) window.reintroduceElement('header', partKey);
+          renderActiveHeaderTemplateTextControls();
+        });
+        labelRow.appendChild(reinBtn);
+      }
+
+      fieldDiv.appendChild(labelRow);
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'form-input';
+      input.style.fontSize = '0.8rem';
+      input.value = currentVal || '';
+      input.placeholder = defaultVal;
+
+      input.addEventListener('input', (e) => {
+        overrides[partKey] = e.target.value;
+        if (window.isElementDeleted && window.isElementDeleted('header', partKey)) {
+          window.reintroduceElement('header', partKey);
+        }
+        triggerRender();
+        if (window.syncInspectorWithSelectedElement) {
+          const elSelect = document.getElementById('inspectorElementSelect');
+          if (elSelect && elSelect.value === 'header') {
+            window.syncInspectorWithSelectedElement('header');
+          }
+        }
+      });
+
+      fieldDiv.appendChild(input);
+      fieldsContainer.appendChild(fieldDiv);
+    };
+
+    let hasFields = false;
+
+    if (tmpl === 'magazine-cover') {
+      hasFields = true;
+      addTmplField('tagline', 'Headline Tagline ("// RUNNER\'S LOG — ISSUE 2026 //")', "// RUNNER'S LOG — ISSUE 2026 //", overrides.tagline);
+      addTmplField('athletePrefix', 'Athlete Prefix Label ("ATHLETE:")', 'ATHLETE:', overrides.athletePrefix);
+    } else if (tmpl === 'retro-cyber') {
+      hasFields = true;
+      addTmplField('sysPrompt', 'System Prompt ("[ SYS.RUN ]")', '[ SYS.RUN ]', overrides.sysPrompt);
+      addTmplField('onlineStatus', 'Online Status ("● ONLINE [OK]")', '● ONLINE [OK]', overrides.onlineStatus);
+    } else if (tmpl === 'minimalist-stamp') {
+      hasFields = true;
+      addTmplField('stampBadge', 'Passport Stamp Badge ("★ OFFICIAL ATHLETIC ENTRY ★")', '★ OFFICIAL ATHLETIC ENTRY ★', overrides.stampBadge);
+      addTmplField('sealTop', 'Circular Seal Top Text ("RUN")', 'RUN', overrides.sealTop);
+      addTmplField('sealBottom', 'Circular Seal Bottom Text ("STAMP")', 'STAMP', overrides.sealBottom);
+    } else if (tmpl === 'hud-flight') {
+      hasFields = true;
+      addTmplField('flightPrompt', 'Telemetry Tag ("▲ RUN_TELEMETRY")', '▲ RUN_TELEMETRY', overrides.flightPrompt);
+      addTmplField('flightStatus', 'GPS Lock Tag ("GPS LOCK: 100%")', 'GPS LOCK: 100%', overrides.flightStatus);
+    } else if (tmpl === 'running-bib-header') {
+      hasFields = true;
+      addTmplField('bibPrefix', 'Race Bib Prefix ("BIB #4219 // ATHLETE:")', 'BIB #4219 // ATHLETE:', overrides.bibPrefix);
+    } else if (tmpl === 'broadcast-lowerthird') {
+      hasFields = true;
+      addTmplField('finishBadge', 'Broadcast Badge ("FINISH")', 'FINISH', overrides.finishBadge);
+    } else if (tmpl === 'badge-shield') {
+      hasFields = true;
+      addTmplField('shieldIcon', 'Trophy Icon / Emoji ("🏆")', '🏆', overrides.shieldIcon);
+    } else if (tmpl === 'pill') {
+      hasFields = true;
+      addTmplField('pillIcon', 'Runner Icon / Emoji ("🏃")', '🏃', overrides.pillIcon);
+    } else if (tmpl === 'athletic') {
+      hasFields = true;
+      addTmplField('hudChip', 'HUD Tag ("⚡ RUN HUD")', '⚡ RUN HUD', overrides.hudChip);
+    } else if (tmpl === 'architect-monolith') {
+      hasFields = true;
+      addTmplField('dayNum', 'Calendar Day ("15")', '15', overrides.dayNum);
+      addTmplField('monthStr', 'Calendar Month ("OCT")', 'OCT', overrides.monthStr);
+    } else if (tmpl === 'circular-monogram') {
+      hasFields = true;
+      addTmplField('monogram', 'Monogram Initials ("RN")', 'RN', overrides.monogram);
+    }
+
+    container.style.display = hasFields ? 'block' : 'none';
+  };
+
+  window.renderActiveHeaderTemplateTextControls = renderActiveHeaderTemplateTextControls;
+
   const setHeaderTemplate = (template) => {
     pushUndoSnapshot();
     state.config.headerTemplate = template;
@@ -1989,7 +2281,14 @@ function setupHeaderTemplateControls() {
       });
     }
 
+    renderActiveHeaderTemplateTextControls();
     triggerRender();
+    if (window.syncInspectorWithSelectedElement) {
+      const elSelect = document.getElementById('inspectorElementSelect');
+      if (elSelect && elSelect.value === 'header') {
+        window.syncInspectorWithSelectedElement('header');
+      }
+    }
   };
 
   if (grid) {
@@ -2007,11 +2306,263 @@ function setupHeaderTemplateControls() {
       setHeaderTemplate(e.target.value);
     });
   }
+
+  // Initial call
+  renderActiveHeaderTemplateTextControls();
 }
 
 // ==========================================
 // 7. INDIVIDUAL ELEMENT INSPECTOR & STYLER
 // ==========================================
+
+  // ==========================================
+  // MULTI-INSTANCE WIDGETS MANAGEMENT SYSTEM
+  // ==========================================
+  const WIDGET_CATEGORIES = {
+    hero: { name: 'Hero Stat Card (Big Number)', icon: '🏆' },
+    metrics: { name: 'Secondary Metrics Grid', icon: '📊' },
+    splits: { name: 'Splits Table / Bar Chart', icon: '📶' },
+    splitHighlight: { name: 'Split Spotlight Card', icon: '⚡' },
+    map: { name: 'GPS Route Map', icon: '🗺️' },
+    elevation: { name: 'Elevation Profile', icon: '⛰️' },
+    paceGraph: { name: 'Pace Graph', icon: '📈' },
+    hrGraph: { name: 'Heart Rate Graph', icon: '💓' },
+    hrBadge: { name: 'Avg Heart Rate Badge', icon: '🩺' },
+    hrZones: { name: 'Heart Rate Zones Bar', icon: '❤️' },
+    brand: { name: 'Social Brand Badge', icon: '⚡' },
+    header: { name: 'Header Widget', icon: '🏷️' },
+  };
+
+  window.renderExtraWidgetsUI = () => {
+    const container = document.getElementById('extraWidgetsListContainer');
+    if (!container) return;
+    container.innerHTML = '';
+
+    const list = state.config.extraWidgetInstances || [];
+    if (list.length === 0) {
+      container.innerHTML = '<div style="font-size: 0.74rem; color: var(--text-muted); font-style: italic; padding: 10px; text-align: center; border: 1px dashed rgba(255,255,255,0.12); border-radius: 6px;">No additional widget instances added yet. Select a category and click "+ Add Widget" above!</div>';
+      return;
+    }
+
+    list.forEach((inst) => {
+      const catInfo = WIDGET_CATEGORIES[inst.category] || { name: inst.category, icon: '📦' };
+      const itemEl = document.createElement('div');
+      itemEl.className = 'extra-widget-item';
+      itemEl.style.cssText = 'display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.04); border: 1px solid var(--border-color); border-radius: 8px; padding: 8px 12px; gap: 8px;';
+
+      const isDel = inst.enabled === false;
+
+      itemEl.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0;">
+          <label class="switch" style="transform: scale(0.85); margin-bottom: 0;">
+            <input type="checkbox" ${inst.enabled !== false ? 'checked' : ''} data-inst-id="${inst.id}">
+            <span class="slider"></span>
+          </label>
+          <div style="min-width: 0; flex: 1;">
+            <div style="font-size: 0.8rem; font-weight: 700; color: ${isDel ? '#f87171' : '#fff'}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+              ${catInfo.icon} ${inst.name || (catInfo.name + ' (' + inst.id + ')')} ${isDel ? '(Hidden)' : ''}
+            </div>
+            <div style="font-size: 0.68rem; color: var(--text-muted);">ID: ${inst.id}</div>
+          </div>
+        </div>
+        <div style="display: flex; gap: 4px; flex-shrink: 0;">
+          <button type="button" class="btn btn-secondary inspect-btn" style="padding: 2px 8px; font-size: 0.7rem; color: var(--accent-volt);" title="Select and style in Element Inspector">🎯 Inspect</button>
+          <button type="button" class="btn btn-secondary dup-btn" style="padding: 2px 6px; font-size: 0.7rem;" title="Duplicate this instance">📋</button>
+          <button type="button" class="btn btn-secondary del-btn" style="padding: 2px 6px; font-size: 0.7rem; color: #f87171;" title="Remove this instance">🗑️</button>
+        </div>
+      `;
+
+      itemEl.querySelector('input[type="checkbox"]').addEventListener('change', (e) => {
+        window.toggleWidgetInstance(inst.id, e.target.checked);
+      });
+      itemEl.querySelector('.inspect-btn').addEventListener('click', () => {
+        window.inspectWidgetInstance(inst.id);
+      });
+      itemEl.querySelector('.dup-btn').addEventListener('click', () => {
+        window.duplicateWidgetInstance(inst.id);
+      });
+      itemEl.querySelector('.del-btn').addEventListener('click', () => {
+        window.removeWidgetInstance(inst.id);
+      });
+
+      container.appendChild(itemEl);
+    });
+  };
+
+  window.refreshInspectorElementDropdown = () => {
+    const elSelect = document.getElementById('inspectorElementSelect');
+    if (!elSelect) return;
+
+    let optgroup = elSelect.querySelector('#inspectorExtraWidgetsOptgroup');
+    if (!optgroup) {
+      optgroup = document.createElement('optgroup');
+      optgroup.id = 'inspectorExtraWidgetsOptgroup';
+      optgroup.label = 'Custom Added Widgets';
+      elSelect.appendChild(optgroup);
+    }
+    optgroup.innerHTML = '';
+
+    const list = state.config.extraWidgetInstances || [];
+    list.forEach((inst) => {
+      const catInfo = WIDGET_CATEGORIES[inst.category] || { name: inst.category, icon: '📦' };
+      const opt = document.createElement('option');
+      opt.value = inst.id;
+      const isDel = inst.enabled === false;
+      opt.textContent = `${catInfo.icon} ${inst.name || inst.id}${isDel ? ' (Deleted)' : ''}`;
+      optgroup.appendChild(opt);
+    });
+  };
+
+  window.addNewWidgetInstance = (category, customName = null, options = {}) => {
+    pushUndoSnapshot();
+    if (!state.config.extraWidgetInstances) state.config.extraWidgetInstances = [];
+
+    const existingCount = state.config.extraWidgetInstances.filter((w) => w.category === category).length;
+    const newIdx = existingCount + 2;
+    const newId = `${category}_${newIdx}`;
+    const catInfo = WIDGET_CATEGORIES[category] || { name: category, icon: '📦' };
+
+    let defaultMetric = 'distance';
+    if (category === 'hero') {
+      defaultMetric = newIdx === 2 ? 'pace' : newIdx === 3 ? 'time' : 'hr';
+    }
+
+    const instName = customName || `${catInfo.name} #${newIdx}${category === 'hero' ? ' (' + defaultMetric.toUpperCase() + ')' : ''}`;
+
+    const newInstance = {
+      id: newId,
+      category: category,
+      name: instName,
+      enabled: true,
+      options: {
+        heroMetric: defaultMetric,
+        ...options,
+      },
+    };
+
+    // Calculate a good offset position
+    const baseBounds = renderer.widgetBounds ? renderer.widgetBounds[category] : null;
+    if (!state.config.widgetPositions) state.config.widgetPositions = {};
+    if (baseBounds) {
+      state.config.widgetPositions[newId] = {
+        x: Math.max(20, baseBounds.x + 30),
+        y: Math.max(20, baseBounds.y + 40),
+        width: baseBounds.width,
+        height: baseBounds.height,
+        isCustom: true,
+      };
+    }
+
+    state.config.extraWidgetInstances.push(newInstance);
+    window.refreshInspectorElementDropdown();
+    window.renderExtraWidgetsUI();
+    selectWidget(newId);
+    triggerRender();
+    showToast(`Added new ${catInfo.name} (${newId})`);
+    return newInstance;
+  };
+
+  window.duplicateWidgetInstance = (sourceKey) => {
+    if (!sourceKey) return;
+    pushUndoSnapshot();
+    const category = getWidgetCategory(sourceKey);
+    const catInfo = WIDGET_CATEGORIES[category] || { name: category, icon: '📦' };
+
+    if (!state.config.extraWidgetInstances) state.config.extraWidgetInstances = [];
+    const count = state.config.extraWidgetInstances.filter((w) => w.category === category).length;
+    const newId = `${category}_${count + 2}`;
+
+    // Clone offsets, styles, and text overrides from sourceKey
+    if (!state.config.widgetPositions) state.config.widgetPositions = {};
+    const srcPos = state.config.widgetPositions[sourceKey] || (renderer.widgetBounds ? renderer.widgetBounds[sourceKey] : null);
+    if (srcPos) {
+      state.config.widgetPositions[newId] = {
+        x: srcPos.x + 25,
+        y: srcPos.y + 25,
+        width: srcPos.width,
+        height: srcPos.height,
+        isCustom: true,
+      };
+    }
+
+    if (state.config.elementStyles?.[sourceKey]) {
+      if (!state.config.elementStyles) state.config.elementStyles = {};
+      state.config.elementStyles[newId] = JSON.parse(JSON.stringify(state.config.elementStyles[sourceKey]));
+    }
+
+    if (state.config.widgetBgStyles?.[sourceKey]) {
+      if (!state.config.widgetBgStyles) state.config.widgetBgStyles = {};
+      state.config.widgetBgStyles[newId] = JSON.parse(JSON.stringify(state.config.widgetBgStyles[sourceKey]));
+    }
+
+    if (state.config.widgetElementOffsets?.[sourceKey]) {
+      if (!state.config.widgetElementOffsets) state.config.widgetElementOffsets = {};
+      state.config.widgetElementOffsets[newId] = JSON.parse(JSON.stringify(state.config.widgetElementOffsets[sourceKey]));
+    }
+
+    if (state.config.widgetTextOverrides?.[sourceKey]) {
+      if (!state.config.widgetTextOverrides) state.config.widgetTextOverrides = {};
+      state.config.widgetTextOverrides[newId] = JSON.parse(JSON.stringify(state.config.widgetTextOverrides[sourceKey]));
+    }
+
+    const newInst = {
+      id: newId,
+      category: category,
+      name: `${catInfo.name} #${count + 2} (Copy)`,
+      enabled: true,
+      options: {},
+    };
+
+    state.config.extraWidgetInstances.push(newInst);
+    window.refreshInspectorElementDropdown();
+    window.renderExtraWidgetsUI();
+    selectWidget(newId);
+    triggerRender();
+    showToast(`Duplicated widget as ${newId}`);
+    return newInst;
+  };
+
+  window.removeWidgetInstance = (id) => {
+    if (!id || !state.config.extraWidgetInstances) return;
+    pushUndoSnapshot();
+    const idx = state.config.extraWidgetInstances.findIndex((w) => w.id === id);
+    if (idx !== -1) {
+      const removed = state.config.extraWidgetInstances.splice(idx, 1)[0];
+      if (renderer.widgetBounds) delete renderer.widgetBounds[id];
+      if (state.selectedWidget === id) selectWidget(null);
+      window.refreshInspectorElementDropdown();
+      window.renderExtraWidgetsUI();
+      triggerRender();
+      showToast(`Removed widget instance ${removed.name || id}`);
+    }
+  };
+
+  window.toggleWidgetInstance = (id, enabled) => {
+    if (!id || !state.config.extraWidgetInstances) return;
+    pushUndoSnapshot();
+    const inst = state.config.extraWidgetInstances.find((w) => w.id === id);
+    if (inst) {
+      inst.enabled = enabled;
+      window.refreshInspectorElementDropdown();
+      window.renderExtraWidgetsUI();
+      triggerRender();
+      showToast(`${enabled ? 'Enabled' : 'Disabled'} ${inst.name || id}`);
+    }
+  };
+
+  window.inspectWidgetInstance = (id) => {
+    selectWidget(id);
+    const styleTabBtn = document.querySelector('button[data-tab="styleTab"]');
+    if (styleTabBtn) styleTabBtn.click();
+    const elSelect = document.getElementById('inspectorElementSelect');
+    if (elSelect) {
+      elSelect.value = id;
+      if (window.syncInspectorWithSelectedElement) {
+        window.syncInspectorWithSelectedElement(id, 'widget');
+      }
+    }
+  };
+
 function setupElementInspectorControls() {
   const elSelect = document.getElementById('inspectorElementSelect');
   const subPartSelect = document.getElementById('inspectorSubPartSelect');
@@ -2039,6 +2590,8 @@ function setupElementInspectorControls() {
   const bgFillColorInput = document.getElementById('inspectorBgFillColorInput');
   const bgFillColorHex = document.getElementById('inspectorBgFillColorHex');
   const resetBgBtn = document.getElementById('inspectorResetBgBtn');
+  const duplicateWidgetBtn = document.getElementById('inspectorDuplicateWidgetBtn');
+  const deleteInstanceBtn = document.getElementById('inspectorDeleteInstanceBtn');
 
   // Sub-element controls
   const subElemXSlider = document.getElementById('inspectorSubElemXSlider');
@@ -2072,6 +2625,19 @@ function setupElementInspectorControls() {
   const resetBtn = document.getElementById('inspectorResetBtn');
   const resetAllBtn = document.getElementById('inspectorResetAllBtn');
 
+  // Reintroduce buttons & notice elements
+  const reintroduceBtn = document.getElementById('inspectorReintroduceBtn');
+  const reintroduceBgBtn = document.getElementById('inspectorReintroduceBgBtn');
+  const reintroduceSubElemBtn = document.getElementById('inspectorReintroduceSubElemBtn');
+  const subElemBannerReintroduceBtn = document.getElementById('inspectorSubElemBannerReintroduceBtn');
+  const widgetReintroduceBtn = document.getElementById('inspectorWidgetReintroduceBtn');
+  const widgetDeletedNotice = document.getElementById('inspectorWidgetDeletedNotice');
+  const widgetDeletedNoticeText = document.getElementById('inspectorWidgetDeletedNoticeText');
+  const subElemDeletedNotice = document.getElementById('inspectorSubElemDeletedNotice');
+  const deleteElementBtn = document.getElementById('inspectorDeleteElementBtn');
+  const deleteBgBtn = document.getElementById('inspectorDeleteBgBtn');
+  const deleteSubElemBtn = document.getElementById('inspectorDeleteSubElemBtn');
+
   if (!elSelect) return;
 
   const SUB_PARTS_MAP = {
@@ -2081,59 +2647,175 @@ function setupElementInspectorControls() {
       { key: 'runner', label: 'Runner Handle' },
       { key: 'location', label: 'Location Name' },
       { key: 'weather', label: 'Weather Information' },
+      { key: 'tagline', label: 'Magazine Cover Tagline ("// RUNNER\'S LOG — ISSUE 2026 //")', template: 'magazine-cover' },
+      { key: 'athletePrefix', label: 'Athlete Prefix Label ("ATHLETE:")', template: 'magazine-cover' },
+      { key: 'sysPrompt', label: 'Cyber HUD System Prompt ("[ SYS.RUN ]")', template: 'retro-cyber' },
+      { key: 'onlineStatus', label: 'Cyber Online Status ("● ONLINE [OK]")', template: 'retro-cyber' },
+      { key: 'stampBadge', label: 'Passport Stamp Top Badge ("★ OFFICIAL ATHLETIC ENTRY ★")', template: 'minimalist-stamp' },
+      { key: 'sealTop', label: 'Circular Seal Top Text ("RUN")', template: 'minimalist-stamp' },
+      { key: 'sealBottom', label: 'Circular Seal Bottom Text ("STAMP")', template: 'minimalist-stamp' },
+      { key: 'flightPrompt', label: 'Flight HUD Telemetry Tag ("▲ RUN_TELEMETRY")', template: 'hud-flight' },
+      { key: 'flightStatus', label: 'Flight Status Tag ("GPS LOCK: 100%")', template: 'hud-flight' },
+      { key: 'bibPrefix', label: 'Race Bib Prefix ("BIB #4219 // ATHLETE:")', template: 'running-bib-header' },
+      { key: 'finishBadge', label: 'Broadcast Banner Badge ("FINISH")', template: 'broadcast-lowerthird' },
+      { key: 'shieldIcon', label: 'Shield Trophy Icon ("🏆")', template: 'badge-shield' },
+      { key: 'pillIcon', label: 'Glass Pill Runner Icon ("🏃")', template: 'pill' },
+      { key: 'hudChip', label: 'Sport Athletic HUD Chip ("⚡ RUN HUD")', template: 'athletic' },
+      { key: 'dayNum', label: 'Calendar Day ("15")', template: 'architect-monolith' },
+      { key: 'monthStr', label: 'Calendar Month ("OCT")', template: 'architect-monolith' },
+      { key: 'monogram', label: 'Monogram Initials ("RN")', template: 'circular-monogram' },
     ],
     hero: [
-      { key: 'label', label: 'Metric Label' },
-      { key: 'val', label: 'Primary Value' },
+      { key: 'label', label: 'Metric Category Label' },
+      { key: 'val', label: 'Primary Value Readout' },
       { key: 'unit', label: 'Metric Unit' },
       { key: 'sec', label: 'Secondary / Sub-Metric' },
+      { key: 'statusBadge', label: 'Bracket Status Badge ("GPS ACTIVE // METRIC")', template: 'boxed-bracket' },
+      { key: 'runnerStatBadge', label: 'Split-Tone Sub-Bar Banner ("⚡ RUN TRACKER OFFICIAL STAT")', template: 'stacked-duo' },
+      { key: 'liveDataBadge', label: 'Cyber HUD Live Badge ("● LIVE_DATA")', template: 'cyber-glass' },
+      { key: 'bibBanner', label: 'Marathon Bib Banner ("★ OFFICIAL RACE SPLIT ★")', template: 'racing-bib' },
+      { key: 'lcdHeader', label: 'Stopwatch LCD Header ("[ DIGITAL TIMER ]")', template: 'digital-lcd' },
+      { key: 'tacticalSys', label: 'Tactical Optic System Tag ("+ SYS // OPTIC")', template: 'tactical-crosshair' },
+      { key: 'tacticalStatus', label: 'Tactical Target Status ("STATUS: LOCKED")', template: 'tactical-crosshair' },
     ],
     splits: [
       { key: 'title', label: 'Split Header Title' },
       { key: 'badge', label: 'Fastest Split Highlight Pill' },
-      { key: 'table', label: 'Splits Table / Bar Chart' },
+      { key: 'lapLabels', label: 'All Lap Labels (L1, L2, KM 1...)' },
+      { key: 'paceLabels', label: 'All Split Paces (Pace Readouts)' },
+      { key: 'bars', label: 'All Split Bars / Columns' },
+      { key: 'headerSplit', label: 'Column Header: Split' },
+      { key: 'headerTime', label: 'Column Header: Time' },
+      { key: 'headerPace', label: 'Column Header: Pace' },
+      { key: 'headerDelta', label: 'Column Header: Delta' },
+      { key: 'headerHr', label: 'Column Header: HR' },
+      { key: 'headerElev', label: 'Column Header: Elevation' },
+      { key: 'table', label: 'Splits Table / Columns Container' },
+    ],
+    splitHighlight: [
+      { key: 'badge', label: 'Top Badge / Trophy' },
+      { key: 'title', label: 'Spotlight Card Title' },
+      { key: 'label', label: 'Split KM Label' },
+      { key: 'val', label: 'Pace Value' },
+      { key: 'time', label: 'Split Duration' },
+      { key: 'hr', label: 'Split Heart Rate' },
+      { key: 'note', label: 'Subtitle / Comparison Note' },
+      { key: 'trophyBanner', label: 'Trophy Card Banner ("CHAMPION INTERVAL")', template: 'trophy-cup' },
+      { key: 'termPrompt', label: 'Terminal Query Prompt ("> EXEC: FASTEST_INTERVAL_QUERY")', template: 'split-terminal' },
     ],
     metrics: [
-      { key: 'label', label: 'Metric Category Labels' },
-      { key: 'val', label: 'Metric Stat Values' },
-    ],
-    map: [
-      { key: 'route', label: 'Route GPS Path' },
-      { key: 'caption', label: 'Polaroid Bottom Caption' },
+      { key: 'label', label: 'All Metric Category Labels' },
+      { key: 'val', label: 'All Metric Stat Values' },
+      { key: 'time', label: 'Time Block (Entire Card)' },
+      { key: 'timeLabel', label: 'Time Text Label ("TIME")' },
+      { key: 'timeVal', label: 'Time Stat Value' },
+      { key: 'pace', label: 'Pace Block (Entire Card)' },
+      { key: 'paceLabel', label: 'Pace Text Label ("PACE")' },
+      { key: 'paceVal', label: 'Pace Stat Value' },
+      { key: 'hr', label: 'Heart Rate Block (Entire Card)' },
+      { key: 'hrLabel', label: 'Heart Rate Label ("HEART RATE")' },
+      { key: 'hrVal', label: 'Heart Rate Stat Value' },
+      { key: 'elevation', label: 'Elevation Gain Block (Entire Card)' },
+      { key: 'elevationLabel', label: 'Elevation Gain Label ("ELEV GAIN")' },
+      { key: 'elevationVal', label: 'Elevation Gain Value' },
+      { key: 'cadence', label: 'Cadence Block (Entire Card)' },
+      { key: 'cadenceLabel', label: 'Cadence Text Label ("CADENCE")' },
+      { key: 'cadenceVal', label: 'Cadence Stat Value' },
+      { key: 'calories', label: 'Calories Block (Entire Card)' },
+      { key: 'caloriesLabel', label: 'Calories Text Label ("CALORIES")' },
+      { key: 'caloriesVal', label: 'Calories Stat Value' },
+      { key: 'bestPace', label: 'Best Pace Block (Entire Card)' },
+      { key: 'bestPaceLabel', label: 'Best Pace Label ("BEST PACE")' },
+      { key: 'bestPaceVal', label: 'Best Pace Stat Value' },
+      { key: 'distance', label: 'Distance Block (Entire Card)' },
+      { key: 'distanceLabel', label: 'Distance Text Label ("DISTANCE")' },
+      { key: 'distanceVal', label: 'Distance Stat Value' },
     ],
     elevation: [
       { key: 'title', label: 'Elevation Profile Title' },
       { key: 'stat', label: 'Elevation Gain & Peak Stats' },
+      { key: 'summitBadge', label: 'Mountain Summit Badge ("⛰️ SUMMIT")', template: 'centered-mountain-peak' },
+      { key: 'min', label: 'Min Elevation Label' },
+      { key: 'max', label: 'Max Elevation Label' },
+      { key: 'gain', label: 'Elevation Gain Label' },
       { key: 'chart', label: 'Elevation Graph Curve/Area' },
     ],
     paceGraph: [
       { key: 'title', label: 'Pace Graph Title' },
       { key: 'stat', label: 'Pace Min/Max/Avg Stats' },
+      { key: 'speedPulseTag', label: 'Speed Pulse Telemetry Tag ("⚡ SPEED")', template: 'centered-speed-pulse' },
+      { key: 'min', label: 'Min Pace Label' },
+      { key: 'avg', label: 'Avg Pace Label' },
+      { key: 'max', label: 'Max Pace Label' },
       { key: 'chart', label: 'Pace Graph Curve/Area' },
     ],
     hrGraph: [
       { key: 'title', label: 'Heart Rate Graph Title' },
       { key: 'stat', label: 'Heart Rate Summary Stats' },
+      { key: 'cardiacHaloTag', label: 'Cardiac Halo Tag ("❤️ CARDIAC")', template: 'centered-cardiac-halo' },
+      { key: 'min', label: 'Min HR Label' },
+      { key: 'avg', label: 'Avg HR Label' },
+      { key: 'max', label: 'Max HR Label' },
       { key: 'chart', label: 'Heart Rate Graph Curve/Area' },
-    ],
-    splitHighlight: [
-      { key: 'badge', label: 'Top Badge / Trophy' },
-      { key: 'val', label: 'Pace Value' },
-      { key: 'title', label: 'Split Name / Distance' },
-      { key: 'time', label: 'Split Duration' },
-      { key: 'hr', label: 'Split Heart Rate' },
     ],
     hrBadge: [
       { key: 'icon', label: 'Heart Icon' },
       { key: 'label', label: 'Badge Label' },
       { key: 'val', label: 'Heart Rate Number' },
       { key: 'unit', label: 'Unit Text (BPM)' },
-      { key: 'peak', label: 'Peak HR Summary' },
+      { key: 'peak', label: 'Peak HR Summary / Zone Tag' },
+      { key: 'zone', label: 'Zone / Intensity Tag' },
+    ],
+    hrZones: [
+      { key: 'title', label: 'Zones Widget Title' },
+      { key: 'z1', label: 'Zone 1 Warmup' },
+      { key: 'z2', label: 'Zone 2 Fat Burn' },
+      { key: 'z3', label: 'Zone 3 Aerobic' },
+      { key: 'z4', label: 'Zone 4 Threshold' },
+      { key: 'z5', label: 'Zone 5 Anaerobic' },
     ],
     brand: [
       { key: 'text', label: 'Brand / Watermark Text' },
+      { key: 'subtext', label: 'Sub-brand / Motto / Hashtag' },
+    ],
+    map: [
+      { key: 'title', label: 'Map Location Tag / Title' },
+      { key: 'caption', label: 'Polaroid Bottom Caption' },
+      { key: 'route', label: 'Route GPS Path' },
     ],
   };
+
+  function getWidgetCategory(key) {
+    if (!key) return '';
+    if (key.includes('_') && !key.endsWith('_bg')) {
+      const cat = key.split('_')[0];
+      if (SUB_PARTS_MAP[cat]) return cat;
+    }
+    return key;
+  }
+
+  function getSubPartsForWidget(widgetKey) {
+    const category = getWidgetCategory(widgetKey);
+    const base = SUB_PARTS_MAP[category] ? [...SUB_PARTS_MAP[category]] : [];
+    if (category === 'splits') {
+      const splits = (state.activity && state.activity.splits) ? state.activity.splits : [];
+      const count = splits.length > 0 ? splits.length : 8;
+      for (let idx = 0; idx < count; idx++) {
+        const it = splits[idx];
+        const sName = it ? (it.shortName || `L${idx + 1}`) : `L${idx + 1}`;
+        const pStr = it ? (it.paceFormatted || '').split(' ')[0] : '5:00';
+        base.push(
+          { key: `split_lap_${idx}`, label: `Split ${idx + 1} Lap Label (${sName})` },
+          { key: `split_pace_${idx}`, label: `Split ${idx + 1} Pace Text (${pStr})` },
+          { key: `split_bar_${idx}`, label: `Split ${idx + 1} Bar / Column (${sName})` },
+          { key: `split_${idx}`, label: `Split ${idx + 1} Entire Item (${sName})` }
+        );
+      }
+    }
+    return base;
+  }
+  window.getWidgetCategory = getWidgetCategory;
+  window.getSubPartsForWidget = getSubPartsForWidget;
 
   const getActiveKey = () => elSelect.value || 'header';
   const getStyleObj = () => {
@@ -2159,6 +2841,157 @@ function setupElementInspectorControls() {
     return state.config.widgetElementOffsets[key][part];
   };
 
+  // Reintroduce & Hidden State Logic
+  window.isElementDeleted = (widgetKey, partKey) => {
+    if (!widgetKey) return false;
+    if (!partKey || partKey === 'widget') {
+      const extraInst = state.config.extraWidgetInstances?.find((inst) => inst.id === widgetKey);
+      if (extraInst) return extraInst.enabled === false;
+      const showKey = 'showWidget' + widgetKey.charAt(0).toUpperCase() + widgetKey.slice(1);
+      if (showKey in state.config && state.config[showKey] === false) return true;
+      return false;
+    }
+    if (partKey === 'bg') {
+      const bg = state.config.widgetBgStyles?.[widgetKey];
+      if (!bg) return false;
+      return bg.hidden === true || bg.visible === false || (bg.showBg === false && bg.showBorder === false);
+    }
+    if (widgetKey === 'header' && partKey === 'location') {
+      if (state.config.headerShowLocation === false || state.config.showLocation === false) return true;
+    }
+    const off = state.config.widgetElementOffsets?.[widgetKey]?.[partKey];
+    if (!off) return false;
+    return off.hidden === true || off.visible === false;
+  };
+
+  window.reintroduceElement = (widgetKey, partKey) => {
+    if (!widgetKey) return;
+    pushUndoSnapshot();
+
+    if (!partKey || partKey === 'widget') {
+      const extraInst = state.config.extraWidgetInstances?.find((inst) => inst.id === widgetKey);
+      if (extraInst) {
+        extraInst.enabled = true;
+        if (typeof renderExtraWidgetsUI === 'function') renderExtraWidgetsUI();
+        triggerRender();
+        showToast(`Reintroduced ${extraInst.name || widgetKey}`);
+        return;
+      }
+      const showKey = 'showWidget' + widgetKey.charAt(0).toUpperCase() + widgetKey.slice(1);
+      state.config[showKey] = true;
+      const widgetCheckbox = document.getElementById(showKey) || document.getElementById('toggle' + widgetKey.charAt(0).toUpperCase() + widgetKey.slice(1));
+      if (widgetCheckbox) widgetCheckbox.checked = true;
+      showToast(`Reintroduced ${widgetKey} widget`);
+    } else if (partKey === 'bg') {
+      if (!state.config.widgetBgStyles) state.config.widgetBgStyles = {};
+      if (!state.config.widgetBgStyles[widgetKey]) state.config.widgetBgStyles[widgetKey] = {};
+      const bg = state.config.widgetBgStyles[widgetKey];
+      bg.hidden = false;
+      bg.visible = true;
+      bg.showBg = true;
+      bg.showBorder = true;
+      bg.textOnly = false;
+      const bgShowBgToggle = document.getElementById('inspectorBgShowBgToggle');
+      const bgShowBorderToggle = document.getElementById('inspectorBgShowBorderToggle');
+      if (bgShowBgToggle) bgShowBgToggle.checked = true;
+      if (bgShowBorderToggle) bgShowBorderToggle.checked = true;
+      showToast(`Reintroduced background border for ${widgetKey}`);
+    } else {
+      if (!state.config.widgetElementOffsets) state.config.widgetElementOffsets = {};
+      if (!state.config.widgetElementOffsets[widgetKey]) state.config.widgetElementOffsets[widgetKey] = {};
+      if (!state.config.widgetElementOffsets[widgetKey][partKey]) {
+        state.config.widgetElementOffsets[widgetKey][partKey] = { x: 0, y: 0, z: 1 };
+      }
+      const off = state.config.widgetElementOffsets[widgetKey][partKey];
+      off.hidden = false;
+      off.visible = true;
+
+      if (widgetKey === 'header' && partKey === 'location') {
+        state.config.headerShowLocation = true;
+        state.config.showLocation = true;
+        ['toggleHeaderLocation', 'textTabToggleHeaderLocation', 'headerShowLocationToggle'].forEach((id) => {
+          const el = document.getElementById(id);
+          if (el) el.checked = true;
+        });
+      }
+      const partObj = (SUB_PARTS_MAP[widgetKey] || []).find((p) => p.key === partKey);
+      const pLabel = partObj ? partObj.label : partKey;
+      showToast(`Reintroduced ${pLabel}`);
+    }
+
+    triggerRender();
+    if (window.syncInspectorWithSelectedElement) {
+      window.syncInspectorWithSelectedElement(widgetKey, partKey);
+    }
+  };
+
+  window.reintroduceAllElements = (widgetKey) => {
+    if (!widgetKey) return;
+    pushUndoSnapshot();
+
+    const extraInst = state.config.extraWidgetInstances?.find((inst) => inst.id === widgetKey);
+    if (extraInst) {
+      extraInst.enabled = true;
+      if (typeof renderExtraWidgetsUI === 'function') renderExtraWidgetsUI();
+    }
+
+    const showKey = 'showWidget' + widgetKey.charAt(0).toUpperCase() + widgetKey.slice(1);
+    if (showKey in state.config) {
+      state.config[showKey] = true;
+      const widgetCheckbox = document.getElementById(showKey) || document.getElementById('toggle' + widgetKey.charAt(0).toUpperCase() + widgetKey.slice(1));
+      if (widgetCheckbox) widgetCheckbox.checked = true;
+    }
+
+    if (state.config.widgetBgStyles?.[widgetKey]) {
+      const bg = state.config.widgetBgStyles[widgetKey];
+      bg.hidden = false;
+      bg.visible = true;
+      bg.showBg = true;
+      bg.showBorder = true;
+      bg.textOnly = false;
+    }
+
+    if (state.config.widgetElementOffsets?.[widgetKey]) {
+      Object.keys(state.config.widgetElementOffsets[widgetKey]).forEach((pk) => {
+        state.config.widgetElementOffsets[widgetKey][pk].hidden = false;
+        state.config.widgetElementOffsets[widgetKey][pk].visible = true;
+      });
+    }
+
+    if (widgetKey === 'header') {
+      state.config.headerShowLocation = true;
+      state.config.showLocation = true;
+      ['toggleHeaderLocation', 'textTabToggleHeaderLocation', 'headerShowLocationToggle'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.checked = true;
+      });
+    }
+
+    triggerRender();
+    if (window.syncInspectorWithSelectedElement) {
+      window.syncInspectorWithSelectedElement(widgetKey);
+    }
+    showToast(`All elements reintroduced for ${widgetKey}`);
+  };
+
+  window.getDeletedElements = (widgetKey) => {
+    if (!widgetKey) return [];
+    const list = [];
+    if (window.isElementDeleted(widgetKey, 'widget')) {
+      list.push({ key: 'widget', label: 'Entire Widget', type: 'widget' });
+    }
+    if (window.isElementDeleted(widgetKey, 'bg')) {
+      list.push({ key: 'bg', label: 'Background Border', type: 'bg' });
+    }
+    const parts = SUB_PARTS_MAP[widgetKey] || [];
+    parts.forEach((p) => {
+      if (window.isElementDeleted(widgetKey, p.key)) {
+        list.push({ key: p.key, label: p.label, type: 'part' });
+      }
+    });
+    return list;
+  };
+
   // Sync controls with selected element
   window.syncInspectorWithSelectedElement = (key, forcePart = null) => {
     if (key && elSelect.querySelector(`option[value="${key}"]`)) {
@@ -2167,33 +3000,94 @@ function setupElementInspectorControls() {
     const targetKey = getActiveKey();
     const st = (state.config.elementStyles && state.config.elementStyles[targetKey]) || {};
 
+    // Update (Deleted) markers on main widget dropdown
+    if (elSelect) {
+      Array.from(elSelect.options).forEach((opt) => {
+        const wKey = opt.value;
+        if (wKey !== '__bg_photo__') {
+          const isWidgetDel = window.isElementDeleted(wKey, 'widget');
+          const cleanName = opt.getAttribute('data-original-label') || opt.textContent.replace(' (Deleted)', '');
+          if (!opt.getAttribute('data-original-label')) opt.setAttribute('data-original-label', cleanName);
+          opt.textContent = isWidgetDel ? `${cleanName} (Deleted)` : cleanName;
+        }
+      });
+    }
+
     // Populate sub-parts dropdown for this widget
     if (subPartGroup) {
       subPartGroup.innerHTML = '';
-      const parts = SUB_PARTS_MAP[targetKey] || [];
+      const parts = getSubPartsForWidget(targetKey);
+      const curHeaderTmpl = state.config.headerTemplate || state.config.headerDesign || 'modern';
+      const curHeroTmpl = state.config.heroDesign || 'mega';
+      const curSplitHighlightTmpl = state.config.splitHighlightDesign || 'spotlight';
+      const curElevationTmpl = state.config.elevationDesign || 'area';
+      const curPaceGraphTmpl = state.config.paceGraphDesign || 'area';
+      const curHrGraphTmpl = state.config.hrGraphDesign || 'filled-area';
+
       parts.forEach((p) => {
+        let isRelevant = !p.template;
+        if (p.template) {
+          if (targetKey === 'header') isRelevant = p.template === curHeaderTmpl;
+          else if (targetKey === 'hero') isRelevant = p.template === curHeroTmpl;
+          else if (targetKey === 'splitHighlight') isRelevant = p.template === curSplitHighlightTmpl;
+          else if (targetKey === 'elevation') isRelevant = p.template === curElevationTmpl;
+          else if (targetKey === 'paceGraph') isRelevant = p.template === curPaceGraphTmpl;
+          else if (targetKey === 'hrGraph') isRelevant = p.template === curHrGraphTmpl;
+          if (!isRelevant && state.config.widgetElementOffsets?.[targetKey]?.[p.key]) {
+            isRelevant = true;
+          }
+        }
+        if (!isRelevant) return;
+
+        const isDel = window.isElementDeleted(targetKey, p.key);
         const opt = document.createElement('option');
         opt.value = p.key;
-        opt.textContent = `📍 ${p.label}`;
+        opt.textContent = isDel ? `❌ ${p.label} (Deleted / Hidden)` : `📍 ${p.label}`;
         subPartGroup.appendChild(opt);
       });
+    }
+
+    // Update background border option text
+    const bgOpt = subPartSelect ? subPartSelect.querySelector('option[value="bg"]') : null;
+    if (bgOpt) {
+      const isBgDel = window.isElementDeleted(targetKey, 'bg');
+      bgOpt.textContent = isBgDel ? '❌ Background Border (Deleted / Hidden)' : '🔲 Background Border Only (Resize & Style)';
     }
 
     if (forcePart && subPartSelect) {
       subPartSelect.value = forcePart;
     } else if (subPartSelect) {
       const curVal = subPartSelect.value;
-      const valid = curVal === 'widget' || curVal === 'bg' || (SUB_PARTS_MAP[targetKey] && SUB_PARTS_MAP[targetKey].some((p) => p.key === curVal));
+      const valid = curVal === 'widget' || curVal === 'bg' || (parts && parts.some((p) => p.key === curVal));
       if (!valid) subPartSelect.value = 'widget';
     }
 
     const currentPart = subPartSelect ? subPartSelect.value : 'widget';
+
+    // Show top Reintroduce button if any elements in this widget are deleted
+    const deletedList = window.getDeletedElements(targetKey);
+    if (reintroduceBtn) {
+      if (deletedList.length > 0) {
+        reintroduceBtn.style.display = 'inline-block';
+        reintroduceBtn.textContent = `➕ Reintroduce (${deletedList.length})`;
+      } else {
+        reintroduceBtn.style.display = 'none';
+      }
+    }
 
     // Show/hide sub-containers
     if (currentPart === 'bg') {
       if (bgControlsContainer) bgControlsContainer.style.display = 'block';
       if (subElemControlsContainer) subElemControlsContainer.style.display = 'none';
       if (subPartBadge) subPartBadge.textContent = 'Background Border Only';
+      if (widgetDeletedNotice) widgetDeletedNotice.style.display = 'none';
+
+      const isBgDel = window.isElementDeleted(targetKey, 'bg');
+      if (reintroduceBgBtn) reintroduceBgBtn.style.display = isBgDel ? 'inline-block' : 'none';
+      if (deleteBgBtn) {
+        deleteBgBtn.textContent = isBgDel ? '➕ Reintroduce Border' : '🗑 Delete Border';
+        deleteBgBtn.style.color = isBgDel ? '#10b981' : '#f87171';
+      }
 
       const bgStyle = (state.config.widgetBgStyles && state.config.widgetBgStyles[targetKey]) || {};
       const wDelta = typeof bgStyle.widthDelta === 'number' ? bgStyle.widthDelta : 0;
@@ -2229,10 +3123,20 @@ function setupElementInspectorControls() {
     } else if (currentPart !== 'widget') {
       if (bgControlsContainer) bgControlsContainer.style.display = 'none';
       if (subElemControlsContainer) subElemControlsContainer.style.display = 'block';
-      const partObj = (SUB_PARTS_MAP[targetKey] || []).find((p) => p.key === currentPart);
+      if (widgetDeletedNotice) widgetDeletedNotice.style.display = 'none';
+
+      const partObj = getSubPartsForWidget(targetKey).find((p) => p.key === currentPart);
       const pLabel = partObj ? partObj.label : currentPart;
       if (subPartBadge) subPartBadge.textContent = pLabel;
       if (subElemTitle) subElemTitle.textContent = `📍 ${pLabel} (Move X, Y, Z)`;
+
+      const isSubDel = window.isElementDeleted(targetKey, currentPart);
+      if (subElemDeletedNotice) subElemDeletedNotice.style.display = isSubDel ? 'flex' : 'none';
+      if (reintroduceSubElemBtn) reintroduceSubElemBtn.style.display = isSubDel ? 'inline-block' : 'none';
+      if (deleteSubElemBtn) {
+        deleteSubElemBtn.textContent = isSubDel ? '➕ Reintroduce' : '🗑 Delete / Hide';
+        deleteSubElemBtn.style.color = isSubDel ? '#10b981' : '#f87171';
+      }
 
       const off = (state.config.widgetElementOffsets && state.config.widgetElementOffsets[targetKey] && state.config.widgetElementOffsets[targetKey][currentPart]) || { x: 0, y: 0, z: 1 };
       const ox = typeof off.x === 'number' ? off.x : 0;
@@ -2283,6 +3187,16 @@ function setupElementInspectorControls() {
       if (bgControlsContainer) bgControlsContainer.style.display = 'none';
       if (subElemControlsContainer) subElemControlsContainer.style.display = 'none';
       if (subPartBadge) subPartBadge.textContent = 'Entire Widget';
+
+      const isWidgetDel = window.isElementDeleted(targetKey, 'widget');
+      if (widgetDeletedNotice) {
+        widgetDeletedNotice.style.display = isWidgetDel ? 'flex' : 'none';
+        if (widgetDeletedNoticeText) widgetDeletedNoticeText.textContent = `⚠️ The ${targetKey} widget is currently deleted and hidden.`;
+      }
+      if (deleteElementBtn) {
+        deleteElementBtn.textContent = isWidgetDel ? '➕ Reintroduce Widget' : '🗑 Delete Widget';
+        deleteElementBtn.style.color = isWidgetDel ? '#10b981' : '#f87171';
+      }
     }
 
     if (fontSelect) fontSelect.value = st.fontFamily || 'default';
@@ -2339,41 +3253,96 @@ function setupElementInspectorControls() {
     container.innerHTML = '';
 
     const overrides = state.config.widgetTextOverrides;
+    if (!overrides[targetKey]) overrides[targetKey] = {};
 
-    const addField = (label, value, placeholder, onChange) => {
+    // 1. Show Hidden / Deleted elements banner at top if any elements are deleted
+    const deletedList = window.getDeletedElements(targetKey);
+    if (deletedList.length > 0) {
+      const banner = document.createElement('div');
+      banner.style.cssText = 'background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 8px; padding: 8px 10px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 6px;';
+      banner.innerHTML = `
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <span style="font-size: 0.74rem; font-weight: 700; color: #f87171;">⚠️ ${deletedList.length} element(s) hidden / deleted in this widget</span>
+          <button type="button" class="btn btn-secondary reintroduce-all-inline-btn" style="padding: 2px 8px; font-size: 0.7rem; color: #10b981; border-color: rgba(16,185,129,0.4); font-weight: 700; cursor: pointer;">➕ Reintroduce All</button>
+        </div>
+        <div class="deleted-chips-row" style="display: flex; flex-wrap: wrap; gap: 4px;"></div>
+      `;
+      const chipsRow = banner.querySelector('.deleted-chips-row');
+      deletedList.forEach((delItem) => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'btn btn-secondary';
+        chip.style.cssText = 'padding: 2px 6px; font-size: 0.68rem; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px; background: rgba(0,0,0,0.4); border-color: rgba(239, 68, 68, 0.3); color: #fff; cursor: pointer;';
+        chip.innerHTML = `<span>➕ Reintroduce</span> <strong>${delItem.label}</strong>`;
+        chip.addEventListener('click', () => {
+          window.reintroduceElement(targetKey, delItem.key);
+        });
+        chipsRow.appendChild(chip);
+      });
+      banner.querySelector('.reintroduce-all-inline-btn').addEventListener('click', () => {
+        window.reintroduceAllElements(targetKey);
+      });
+      container.appendChild(banner);
+    }
+
+    const addField = (partKey, label, value, placeholder, onChange) => {
       const field = document.createElement('div');
       field.className = 'inspector-text-field';
-      field.innerHTML = `
-        <label>${label}</label>
-        <input type="text" value="${value || ''}" placeholder="${placeholder || ''}">
-      `;
-      const input = field.querySelector('input');
+      field.style.marginBottom = '8px';
+
+      const isDel = window.isElementDeleted(targetKey, partKey);
+
+      const labelRow = document.createElement('div');
+      labelRow.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;';
+
+      const lbl = document.createElement('label');
+      lbl.style.cssText = 'font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); display: flex; align-items: center; gap: 4px;';
+      lbl.textContent = label;
+      labelRow.appendChild(lbl);
+
+      if (isDel) {
+        const delTag = document.createElement('span');
+        delTag.style.cssText = 'font-size: 0.65rem; color: #ef4444; font-weight: 700;';
+        delTag.textContent = '[Deleted]';
+        lbl.appendChild(delTag);
+
+        const reinBtn = document.createElement('button');
+        reinBtn.type = 'button';
+        reinBtn.className = 'btn btn-secondary';
+        reinBtn.style.cssText = 'padding: 1px 6px; font-size: 0.66rem; color: #10b981; border-color: rgba(16,185,129,0.3); font-weight: 700; cursor: pointer;';
+        reinBtn.textContent = '➕ Reintroduce';
+        reinBtn.addEventListener('click', () => {
+          window.reintroduceElement(targetKey, partKey);
+        });
+        labelRow.appendChild(reinBtn);
+      }
+
+      field.appendChild(labelRow);
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'form-input';
+      input.style.cssText = 'width: 100%; font-size: 0.8rem; padding: 5px 8px; border-radius: 6px;';
+      input.value = value || '';
+      input.placeholder = placeholder || '';
+
       input.addEventListener('input', (e) => {
+        if (window.isElementDeleted(targetKey, partKey)) {
+          window.reintroduceElement(targetKey, partKey);
+        }
         onChange(e.target.value);
         triggerRender();
       });
+
+      field.appendChild(input);
       container.appendChild(field);
       return input;
     };
 
-    if (targetKey === 'hero') {
-      addField('Metric Label', overrides.hero.label, 'DISTANCE', (v) => {
-        overrides.hero.label = v;
-        const el = document.getElementById('textTabHeroLabel');
-        if (el) el.value = v;
-      });
-      addField('Value Override', overrides.hero.value, 'Auto-calculated (or custom)', (v) => {
-        overrides.hero.value = v;
-        const el = document.getElementById('textTabHeroValue');
-        if (el) el.value = v;
-      });
-      addField('Unit', overrides.hero.unit, 'KM', (v) => {
-        overrides.hero.unit = v;
-        const el = document.getElementById('textTabHeroUnit');
-        if (el) el.value = v;
-      });
-    } else if (targetKey === 'header') {
-      addField('Title', state.config.customTitle || overrides.header.title, 'MORNING RUN', (v) => {
+    if (targetKey === 'header') {
+      const curHdrTmpl = state.config.headerTemplate || state.config.headerDesign || 'modern';
+
+      addField('title', 'Main Title', state.config.customTitle || overrides.header.title, 'MORNING RUN', (v) => {
         state.config.customTitle = v;
         overrides.header.title = v;
         const el1 = document.getElementById('inputActivityTitle');
@@ -2381,13 +3350,15 @@ function setupElementInspectorControls() {
         if (el1) el1.value = v;
         if (el2) el2.value = v;
       });
-      addField('Subtitle / Date', state.config.customSubtitle || overrides.header.subtitle, 'Date & Time', (v) => {
+
+      addField('subtitle', 'Subtitle / Date', state.config.customSubtitle || overrides.header.subtitle, 'Date & Time', (v) => {
         state.config.customSubtitle = v;
         overrides.header.subtitle = v;
         const el = document.getElementById('textTabSubtitle');
         if (el) el.value = v;
       });
-      addField('Runner Handle', state.config.runnerName || overrides.header.runner, '@runner_alex', (v) => {
+
+      addField('runner', 'Runner Handle', state.config.runnerName || overrides.header.runner, '@runner_alex', (v) => {
         state.config.runnerName = v;
         overrides.header.runner = v;
         const el1 = document.getElementById('inputRunnerName');
@@ -2395,7 +3366,8 @@ function setupElementInspectorControls() {
         if (el1) el1.value = v;
         if (el2) el2.value = v;
       });
-      addField('Location', state.config.locationName || overrides.header.location, 'Location name', (v) => {
+
+      addField('location', 'Location Name', state.config.locationName || overrides.header.location, 'Location name', (v) => {
         state.config.locationName = v;
         overrides.header.location = v;
         const el1 = document.getElementById('inputLocationName');
@@ -2403,7 +3375,8 @@ function setupElementInspectorControls() {
         if (el1) el1.value = v;
         if (el2) el2.value = v;
       });
-      addField('Weather', state.config.weatherText || overrides.header.weather, '18°C ☀️ Sunny', (v) => {
+
+      addField('weather', 'Weather Information', state.config.weatherText || overrides.header.weather, '18°C ☀️ Sunny', (v) => {
         state.config.weatherText = v;
         overrides.header.weather = v;
         const el1 = document.getElementById('inputWeatherText');
@@ -2411,117 +3384,350 @@ function setupElementInspectorControls() {
         if (el1) el1.value = v;
         if (el2) el2.value = v;
       });
+
+      // Template-specific text elements (Magazine Cover, Cyber, Stamp, HUD Flight, etc.)
+      if (curHdrTmpl === 'magazine-cover') {
+        addField('tagline', 'Headline Cover Tagline', overrides.header.tagline, "// RUNNER'S LOG — ISSUE 2026 //", (v) => {
+          overrides.header.tagline = v;
+        });
+        addField('athletePrefix', 'Athlete Prefix Label', overrides.header.athletePrefix, 'ATHLETE:', (v) => {
+          overrides.header.athletePrefix = v;
+        });
+      } else if (curHdrTmpl === 'retro-cyber') {
+        addField('sysPrompt', 'Cyber System Prompt', overrides.header.sysPrompt, '[ SYS.RUN ]', (v) => {
+          overrides.header.sysPrompt = v;
+        });
+        addField('onlineStatus', 'Cyber Online Status Tag', overrides.header.onlineStatus, '● ONLINE [OK]', (v) => {
+          overrides.header.onlineStatus = v;
+        });
+      } else if (curHdrTmpl === 'minimalist-stamp') {
+        addField('stampBadge', 'Passport Stamp Top Badge', overrides.header.stampBadge, '★ OFFICIAL ATHLETIC ENTRY ★', (v) => {
+          overrides.header.stampBadge = v;
+        });
+        addField('sealTop', 'Circular Seal Top Text', overrides.header.sealTop, 'RUN', (v) => {
+          overrides.header.sealTop = v;
+        });
+        addField('sealBottom', 'Circular Seal Bottom Text', overrides.header.sealBottom, 'STAMP', (v) => {
+          overrides.header.sealBottom = v;
+        });
+      } else if (curHdrTmpl === 'hud-flight') {
+        addField('flightPrompt', 'Flight Telemetry Tag', overrides.header.flightPrompt, '▲ RUN_TELEMETRY', (v) => {
+          overrides.header.flightPrompt = v;
+        });
+        addField('flightStatus', 'GPS Lock Status Tag', overrides.header.flightStatus, 'GPS LOCK: 100%', (v) => {
+          overrides.header.flightStatus = v;
+        });
+      } else if (curHdrTmpl === 'running-bib-header') {
+        addField('bibPrefix', 'Race Bib Prefix Tag', overrides.header.bibPrefix, 'BIB #4219 // ATHLETE:', (v) => {
+          overrides.header.bibPrefix = v;
+        });
+      } else if (curHdrTmpl === 'broadcast-lowerthird') {
+        addField('finishBadge', 'Broadcast Badge', overrides.header.finishBadge, 'FINISH', (v) => {
+          overrides.header.finishBadge = v;
+        });
+      } else if (curHdrTmpl === 'badge-shield') {
+        addField('shieldIcon', 'Shield Badge Icon', overrides.header.shieldIcon, '🏆', (v) => {
+          overrides.header.shieldIcon = v;
+        });
+      } else if (curHdrTmpl === 'pill') {
+        addField('pillIcon', 'Glass Pill Icon', overrides.header.pillIcon, '🏃', (v) => {
+          overrides.header.pillIcon = v;
+        });
+      } else if (curHdrTmpl === 'athletic') {
+        addField('hudChip', 'Athletic HUD Chip', overrides.header.hudChip, '⚡ RUN HUD', (v) => {
+          overrides.header.hudChip = v;
+        });
+      } else if (curHdrTmpl === 'architect-monolith') {
+        addField('dayNum', 'Calendar Day Number', overrides.header.dayNum, '15', (v) => {
+          overrides.header.dayNum = v;
+        });
+        addField('monthStr', 'Calendar Month String', overrides.header.monthStr, 'OCT', (v) => {
+          overrides.header.monthStr = v;
+        });
+      } else if (curHdrTmpl === 'circular-monogram') {
+        addField('monogram', 'Monogram Letters', overrides.header.monogram, 'RN', (v) => {
+          overrides.header.monogram = v;
+        });
+      }
+    } else if (targetKey === 'hero') {
+      const curHeroTmpl = state.config.heroDesign || 'mega';
+
+      addField('label', 'Metric Category Label', overrides.hero.label, 'DISTANCE', (v) => {
+        overrides.hero.label = v;
+        const el = document.getElementById('textTabHeroLabel');
+        if (el) el.value = v;
+      });
+      addField('val', 'Value Override', overrides.hero.value, 'Auto-calculated (or custom)', (v) => {
+        overrides.hero.value = v;
+        const el = document.getElementById('textTabHeroValue');
+        if (el) el.value = v;
+      });
+      addField('unit', 'Metric Unit', overrides.hero.unit, 'KM', (v) => {
+        overrides.hero.unit = v;
+        const el = document.getElementById('textTabHeroUnit');
+        if (el) el.value = v;
+      });
+      addField('sec', 'Secondary / Sub-Metric', overrides.hero.secondary, 'GPS TRACKED', (v) => {
+        overrides.hero.secondary = v;
+      });
+
+      if (curHeroTmpl === 'boxed-bracket') {
+        addField('statusBadge', 'Status Badge Tag', overrides.hero.statusBadge, 'GPS ACTIVE // METRIC', (v) => {
+          overrides.hero.statusBadge = v;
+        });
+      } else if (curHeroTmpl === 'stacked-duo') {
+        addField('runnerStatBadge', 'Sub-Bar Banner Tag', overrides.hero.runnerStatBadge, '⚡ RUN TRACKER OFFICIAL STAT', (v) => {
+          overrides.hero.runnerStatBadge = v;
+        });
+      } else if (curHeroTmpl === 'cyber-glass') {
+        addField('liveDataBadge', 'Cyber Live Data Badge', overrides.hero.liveDataBadge, '● LIVE_DATA', (v) => {
+          overrides.hero.liveDataBadge = v;
+        });
+      } else if (curHeroTmpl === 'racing-bib') {
+        addField('bibBanner', 'Race Bib Banner Tag', overrides.hero.bibBanner, '★ OFFICIAL RACE SPLIT ★', (v) => {
+          overrides.hero.bibBanner = v;
+        });
+      } else if (curHeroTmpl === 'digital-lcd') {
+        addField('lcdHeader', 'Stopwatch LCD Header', overrides.hero.lcdHeader, '[ DIGITAL TIMER ]', (v) => {
+          overrides.hero.lcdHeader = v;
+        });
+      } else if (curHeroTmpl === 'tactical-crosshair') {
+        addField('tacticalSys', 'Tactical System Tag', overrides.hero.tacticalSys, '+ SYS // OPTIC', (v) => {
+          overrides.hero.tacticalSys = v;
+        });
+        addField('tacticalStatus', 'Tactical Status Readout', overrides.hero.tacticalStatus, 'STATUS: LOCKED', (v) => {
+          overrides.hero.tacticalStatus = v;
+        });
+      }
     } else if (targetKey === 'splits') {
-      addField('Split Widget Title', state.config.splitCustomTitle || overrides.splits.title, 'SPLITS', (v) => {
+      addField('title', 'Split Widget Title', state.config.splitCustomTitle || overrides.splits.title, 'SPLITS', (v) => {
         state.config.splitCustomTitle = v;
         overrides.splits.title = v;
         const el = document.getElementById('inputSplitWidgetTitle');
         if (el) el.value = v;
       });
-      addField('Column Header: Split', overrides.splits.headerSplit, 'SPLIT', (v) => {
+      addField('badge', 'Fastest Split Pill Badge', overrides.splits.badge, 'FASTEST', (v) => {
+        overrides.splits.badge = v;
+      });
+      addField('headerSplit', 'Column Header: Split', overrides.splits.headerSplit, 'SPLIT', (v) => {
         overrides.splits.headerSplit = v;
         const el = document.getElementById('textTabSplitHeaderSplit');
         if (el) el.value = v;
       });
-      addField('Column Header: Time', overrides.splits.headerTime, 'TIME', (v) => {
+      addField('headerTime', 'Column Header: Time', overrides.splits.headerTime, 'TIME', (v) => {
         overrides.splits.headerTime = v;
         const el = document.getElementById('textTabSplitHeaderTime');
         if (el) el.value = v;
       });
-      addField('Column Header: Pace', overrides.splits.headerPace, 'PACE', (v) => {
+      addField('headerPace', 'Column Header: Pace', overrides.splits.headerPace, 'PACE', (v) => {
         overrides.splits.headerPace = v;
         const el = document.getElementById('textTabSplitHeaderPace');
         if (el) el.value = v;
       });
-      addField('Column Header: +/- Delta', overrides.splits.headerDelta, '+/-', (v) => {
+      addField('headerDelta', 'Column Header: +/- Delta', overrides.splits.headerDelta, '+/-', (v) => {
         overrides.splits.headerDelta = v;
         const el = document.getElementById('textTabSplitHeaderDelta');
         if (el) el.value = v;
       });
-      addField('Column Header: Avg HR', overrides.splits.headerHr, 'AVG HR', (v) => {
+      addField('headerHr', 'Column Header: Avg HR', overrides.splits.headerHr, 'AVG HR', (v) => {
         overrides.splits.headerHr = v;
         const el = document.getElementById('textTabSplitHeaderHr');
         if (el) el.value = v;
       });
-      addField('Column Header: Elevation', overrides.splits.headerElev, 'ELEV', (v) => {
+      addField('headerElev', 'Column Header: Elevation', overrides.splits.headerElev, 'ELEV', (v) => {
         overrides.splits.headerElev = v;
         const el = document.getElementById('textTabSplitHeaderElev');
         if (el) el.value = v;
       });
+    } else if (targetKey === 'splitHighlight') {
+      const curSHTmpl = state.config.splitHighlightDesign || 'spotlight';
+
+      addField('title', 'Spotlight Card Title', overrides.splitHighlight.title, 'FASTEST SPLIT', (v) => {
+        overrides.splitHighlight.title = v;
+      });
+      addField('label', 'Split KM Label', overrides.splitHighlight.label, 'KM 5', (v) => {
+        overrides.splitHighlight.label = v;
+      });
+      addField('val', 'Pace / Time Readout', overrides.splitHighlight.pace || overrides.splitHighlight.val, '4:12 /km', (v) => {
+        overrides.splitHighlight.pace = v;
+        overrides.splitHighlight.val = v;
+      });
+      addField('note', 'Subtitle / Comparison Note', overrides.splitHighlight.note, '+12s faster than average', (v) => {
+        overrides.splitHighlight.note = v;
+      });
+
+      if (curSHTmpl === 'leaderboard') {
+        addField('trophyBanner', 'Trophy Banner Tag', overrides.splitHighlight.trophyBanner, '🏆 PERSONAL RECORD', (v) => {
+          overrides.splitHighlight.trophyBanner = v;
+        });
+      } else if (curSHTmpl === 'cyber') {
+        addField('termPrompt', 'Terminal Prompt Tag', overrides.splitHighlight.termPrompt, '> QUERY: FASTEST_SPLIT', (v) => {
+          overrides.splitHighlight.termPrompt = v;
+        });
+      }
     } else if (targetKey === 'metrics') {
-      addField('Distance Label', state.config.labelDistance, 'DISTANCE', (v) => {
+      addField('distance', 'Distance Label', state.config.labelDistance || overrides.metrics.distance, 'DISTANCE', (v) => {
         state.config.labelDistance = v;
         overrides.metrics.distance = v;
         const el = document.getElementById('customLabelDistance');
         if (el) el.value = v;
       });
-      addField('Moving Time Label', state.config.labelTime, 'TIME', (v) => {
+      addField('time', 'Moving Time Label', state.config.labelTime || overrides.metrics.time, 'TIME', (v) => {
         state.config.labelTime = v;
         overrides.metrics.time = v;
         const el = document.getElementById('customLabelTime');
         if (el) el.value = v;
       });
-      addField('Avg Pace Label', state.config.labelPace, 'AVG PACE', (v) => {
+      addField('pace', 'Avg Pace Label', state.config.labelPace || overrides.metrics.pace, 'AVG PACE', (v) => {
         state.config.labelPace = v;
         overrides.metrics.pace = v;
         const el = document.getElementById('customLabelPace');
         if (el) el.value = v;
       });
-      addField('Avg HR Label', state.config.labelHr, 'AVG HR', (v) => {
+      addField('hr', 'Avg HR Label', state.config.labelHr || overrides.metrics.hr, 'AVG HR', (v) => {
         state.config.labelHr = v;
         overrides.metrics.hr = v;
         const el = document.getElementById('customLabelHr');
         if (el) el.value = v;
       });
-      addField('Elevation Gain Label', state.config.labelElevation, 'ELEV GAIN', (v) => {
+      addField('elevation', 'Elevation Gain Label', state.config.labelElevation || overrides.metrics.elevation, 'ELEV GAIN', (v) => {
         state.config.labelElevation = v;
         overrides.metrics.elevation = v;
         const el = document.getElementById('customLabelElevation');
         if (el) el.value = v;
       });
-      addField('Cadence Label', state.config.labelCadence, 'CADENCE', (v) => {
+      addField('cadence', 'Cadence Label', state.config.labelCadence || overrides.metrics.cadence, 'CADENCE', (v) => {
         state.config.labelCadence = v;
         overrides.metrics.cadence = v;
         const el = document.getElementById('customLabelCadence');
         if (el) el.value = v;
       });
+      addField('calories', 'Calories Label', state.config.labelCalories || overrides.metrics.calories, 'CALORIES', (v) => {
+        state.config.labelCalories = v;
+        overrides.metrics.calories = v;
+        const el = document.getElementById('customLabelCalories');
+        if (el) el.value = v;
+      });
+      addField('bestPace', 'Best Pace Label', state.config.labelBestPace || overrides.metrics.bestPace, 'BEST PACE', (v) => {
+        state.config.labelBestPace = v;
+        overrides.metrics.bestPace = v;
+      });
     } else if (targetKey === 'paceGraph') {
-      addField('Pace Graph Title', overrides.paceGraph.title, 'PACE PROFILE', (v) => {
+      const curPaceTmpl = state.config.paceGraphDesign || 'area';
+      addField('title', 'Pace Graph Title', overrides.paceGraph.title, 'PACE PROFILE', (v) => {
         overrides.paceGraph.title = v;
         const el = document.getElementById('textTabPaceGraphTitle');
         if (el) el.value = v;
       });
+      addField('stat', 'Pace Stat Pill Readout', overrides.paceGraph.stat, 'BEST: 4:02', (v) => {
+        overrides.paceGraph.stat = v;
+      });
+      addField('min', 'Min Pace Label', overrides.paceGraph.min, 'MIN', (v) => {
+        overrides.paceGraph.min = v;
+      });
+      addField('avg', 'Avg Pace Label', overrides.paceGraph.avg, 'AVG', (v) => {
+        overrides.paceGraph.avg = v;
+      });
+      addField('max', 'Max Pace Label', overrides.paceGraph.max, 'MAX', (v) => {
+        overrides.paceGraph.max = v;
+      });
+      if (curPaceTmpl === 'cyber-pulse') {
+        addField('speedPulseTag', 'Speed Pulse HUD Tag', overrides.paceGraph.speedPulseTag, '⚡ SPEED_PULSE', (v) => {
+          overrides.paceGraph.speedPulseTag = v;
+        });
+      }
     } else if (targetKey === 'hrGraph') {
-      addField('HR Graph Title', overrides.hrGraph.title, 'HEART RATE ZONES', (v) => {
+      const curHrTmpl = state.config.hrGraphDesign || 'filled-area';
+      addField('title', 'HR Graph Title', overrides.hrGraph.title, 'HEART RATE ZONES', (v) => {
         overrides.hrGraph.title = v;
         const el = document.getElementById('textTabHrGraphTitle');
         if (el) el.value = v;
       });
+      addField('stat', 'HR Stat Pill Readout', overrides.hrGraph.stat, 'PEAK: 178 BPM', (v) => {
+        overrides.hrGraph.stat = v;
+      });
+      addField('min', 'Min HR Label', overrides.hrGraph.min, 'MIN', (v) => {
+        overrides.hrGraph.min = v;
+      });
+      addField('avg', 'Avg HR Label', overrides.hrGraph.avg, 'AVG', (v) => {
+        overrides.hrGraph.avg = v;
+      });
+      addField('max', 'Max HR Label', overrides.hrGraph.max, 'MAX', (v) => {
+        overrides.hrGraph.max = v;
+      });
+      if (curHrTmpl === 'centered-cardiac-halo') {
+        addField('cardiacHaloTag', 'Cardiac Halo Tag', overrides.hrGraph.cardiacHaloTag, '❤️ CARDIAC', (v) => {
+          overrides.hrGraph.cardiacHaloTag = v;
+        });
+      }
     } else if (targetKey === 'elevation') {
-      addField('Elevation Profile Title', overrides.elevation.title, 'ELEVATION PROFILE', (v) => {
+      const curElevTmpl = state.config.elevationDesign || 'area';
+      addField('title', 'Elevation Profile Title', overrides.elevation.title, 'ELEVATION PROFILE', (v) => {
         overrides.elevation.title = v;
         const el = document.getElementById('textTabElevationTitle');
         if (el) el.value = v;
       });
+      addField('stat', 'Elevation Stat Pill', overrides.elevation.stat, '+210m GAIN', (v) => {
+        overrides.elevation.stat = v;
+      });
+      addField('min', 'Min Elevation Label', overrides.elevation.min, 'MIN 0m', (v) => {
+        overrides.elevation.min = v;
+      });
+      addField('max', 'Max Elevation Label', overrides.elevation.max, 'MAX 150m', (v) => {
+        overrides.elevation.max = v;
+      });
+      addField('gain', 'Total Gain Label', overrides.elevation.gain, 'GAIN +210m', (v) => {
+        overrides.elevation.gain = v;
+      });
+      if (curElevTmpl === 'contour') {
+        addField('summitBadge', 'Summit Badge Tag', overrides.elevation.summitBadge, '▲ SUMMIT: 150m', (v) => {
+          overrides.elevation.summitBadge = v;
+        });
+      }
     } else if (targetKey === 'hrBadge') {
-      addField('Badge Label', overrides.hrBadge.label, 'AVG HEART RATE', (v) => {
+      addField('label', 'Badge Label', overrides.hrBadge.label, 'AVG HEART RATE', (v) => {
         overrides.hrBadge.label = v;
         const el = document.getElementById('textTabHrBadgeLabel');
         if (el) el.value = v;
       });
-      addField('Unit', overrides.hrBadge.unit, 'BPM', (v) => {
+      addField('unit', 'Unit', overrides.hrBadge.unit, 'BPM', (v) => {
         overrides.hrBadge.unit = v;
         const el = document.getElementById('textTabHrBadgeUnit');
         if (el) el.value = v;
       });
+      addField('peak', 'Peak HR Summary', overrides.hrBadge.peak, 'MAX 178 BPM', (v) => {
+        overrides.hrBadge.peak = v;
+      });
+      addField('zone', 'Zone / Intensity Tag', overrides.hrBadge.zone, 'THRESHOLD / ZONE 4', (v) => {
+        overrides.hrBadge.zone = v;
+      });
+    } else if (targetKey === 'hrZones') {
+      addField('title', 'Zones Title', overrides.hrZones.title, 'HEART RATE ZONES', (v) => {
+        overrides.hrZones.title = v;
+      });
+      addField('z1', 'Zone 1 Label', overrides.hrZones.z1, 'Z1 Easy', (v) => { overrides.hrZones.z1 = v; });
+      addField('z2', 'Zone 2 Label', overrides.hrZones.z2, 'Z2 Aerobic', (v) => { overrides.hrZones.z2 = v; });
+      addField('z3', 'Zone 3 Label', overrides.hrZones.z3, 'Z3 Tempo', (v) => { overrides.hrZones.z3 = v; });
+      addField('z4', 'Zone 4 Label', overrides.hrZones.z4, 'Z4 Threshold', (v) => { overrides.hrZones.z4 = v; });
+      addField('z5', 'Zone 5 Label', overrides.hrZones.z5, 'Z5 Anaerobic', (v) => { overrides.hrZones.z5 = v; });
     } else if (targetKey === 'brand') {
-      addField('Brand / Watermark Text', state.config.customWatermark || overrides.brand.text, '⚡ RUNOVERLAY', (v) => {
+      addField('text', 'Brand / Watermark Text', state.config.customWatermark || overrides.brand.text, '⚡ RUNOVERLAY', (v) => {
         state.config.customWatermark = v;
         overrides.brand.text = v;
         const el1 = document.getElementById('textTabWatermark');
         const el2 = document.getElementById('textTabBrandWatermarkText');
         if (el1) el1.value = v;
         if (el2) el2.value = v;
+      });
+      addField('subtext', 'Sub-brand / Motto', overrides.brand.subtext, '#NeverStopRunning', (v) => {
+        overrides.brand.subtext = v;
+      });
+    } else if (targetKey === 'map') {
+      addField('title', 'Map Title / Tag', overrides.map.title, 'GPS ROUTE', (v) => {
+        overrides.map.title = v;
+      });
+      addField('caption', 'Polaroid Bottom Caption', overrides.map.caption, 'JAKARTA, INDONESIA', (v) => {
+        overrides.map.caption = v;
       });
     } else {
       container.innerHTML = '<div style="font-size:0.75rem; color:var(--text-muted); padding:6px 0;">This graphic element does not have editable text labels.</div>';
@@ -2749,6 +3955,26 @@ function setupElementInspectorControls() {
     });
   }
 
+  if (duplicateWidgetBtn) {
+    duplicateWidgetBtn.addEventListener('click', () => {
+      const curKey = elSelect ? elSelect.value : state.selectedWidget;
+      if (curKey && curKey !== '__bg_photo__') {
+        window.duplicateWidgetInstance(curKey);
+      } else {
+        showToast('Please select a widget to duplicate');
+      }
+    });
+  }
+
+  if (deleteInstanceBtn) {
+    deleteInstanceBtn.addEventListener('click', () => {
+      const curKey = elSelect ? elSelect.value : state.selectedWidget;
+      if (curKey) {
+        window.removeWidgetInstance(curKey);
+      }
+    });
+  }
+
   if (resetBgBtn) {
     resetBgBtn.addEventListener('click', () => {
       const key = getActiveKey();
@@ -2904,17 +4130,25 @@ function setupElementInspectorControls() {
     });
   }
 
-  const deleteElementBtn = document.getElementById('inspectorDeleteElementBtn');
   if (deleteElementBtn) {
     deleteElementBtn.addEventListener('click', () => {
-      deleteSelectedTarget(getActiveKey());
+      const key = getActiveKey();
+      if (window.isElementDeleted(key, 'widget')) {
+        window.reintroduceElement(key, 'widget');
+      } else {
+        deleteSelectedTarget(key);
+      }
     });
   }
 
-  const deleteBgBtn = document.getElementById('inspectorDeleteBgBtn');
   if (deleteBgBtn) {
     deleteBgBtn.addEventListener('click', () => {
-      deleteSelectedTarget(getActiveKey() + '_bg');
+      const key = getActiveKey();
+      if (window.isElementDeleted(key, 'bg')) {
+        window.reintroduceElement(key, 'bg');
+      } else {
+        deleteSelectedTarget(key + '_bg');
+      }
     });
   }
 
@@ -2959,21 +4193,80 @@ function setupElementInspectorControls() {
     });
   }
 
-  const deleteSubElemBtn = document.getElementById('inspectorDeleteSubElemBtn');
   if (deleteSubElemBtn) {
     deleteSubElemBtn.addEventListener('click', () => {
       const key = getActiveKey();
       const part = subPartSelect ? subPartSelect.value : '';
-      if (!part || part === 'widget' || part === 'bg') {
-        deleteSelectedTarget(key);
+      if (!part || part === 'widget') {
+        if (window.isElementDeleted(key, 'widget')) {
+          window.reintroduceElement(key, 'widget');
+        } else {
+          deleteSelectedTarget(key);
+        }
+      } else if (part === 'bg') {
+        if (window.isElementDeleted(key, 'bg')) {
+          window.reintroduceElement(key, 'bg');
+        } else {
+          deleteSelectedTarget(key + '_bg');
+        }
       } else {
-        pushUndoSnapshot();
-        const sub = getSubElemObj();
-        sub.hidden = true;
-        sub.visible = false;
-        triggerRender();
-        showToast(`Deleted / hid ${part} in ${key}`);
+        if (window.isElementDeleted(key, part)) {
+          window.reintroduceElement(key, part);
+        } else {
+          pushUndoSnapshot();
+          const sub = getSubElemObj();
+          sub.hidden = true;
+          sub.visible = false;
+          if (key === 'header' && part === 'location') {
+            state.config.headerShowLocation = false;
+            state.config.showLocation = false;
+            ['toggleHeaderLocation', 'textTabToggleHeaderLocation', 'headerShowLocationToggle'].forEach((id) => {
+              const el = document.getElementById(id);
+              if (el) el.checked = false;
+            });
+          }
+          triggerRender();
+          window.syncInspectorWithSelectedElement(key, part);
+          showToast(`Deleted / hid ${part} in ${key}`);
+        }
       }
+    });
+  }
+
+  // Dedicated Reintroduce Buttons
+  if (reintroduceBtn) {
+    reintroduceBtn.addEventListener('click', () => {
+      window.reintroduceAllElements(getActiveKey());
+    });
+  }
+
+  if (reintroduceBgBtn) {
+    reintroduceBgBtn.addEventListener('click', () => {
+      window.reintroduceElement(getActiveKey(), 'bg');
+    });
+  }
+
+  if (reintroduceSubElemBtn) {
+    reintroduceSubElemBtn.addEventListener('click', () => {
+      const part = subPartSelect ? subPartSelect.value : '';
+      if (part && part !== 'widget' && part !== 'bg') {
+        window.reintroduceElement(getActiveKey(), part);
+      }
+    });
+  }
+
+  if (subElemBannerReintroduceBtn) {
+    subElemBannerReintroduceBtn.addEventListener('click', () => {
+      const part = subPartSelect ? subPartSelect.value : '';
+      if (part && part !== 'widget' && part !== 'bg') {
+        window.reintroduceElement(getActiveKey(), part);
+      }
+    });
+  }
+
+  if (widgetReintroduceBtn) {
+    widgetReintroduceBtn.addEventListener('click', () => {
+      window.reintroduceElement(getActiveKey(), 'widget');
     });
   }
 
