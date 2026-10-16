@@ -1,0 +1,1990 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0a0d">
+  <meta name="description" content="Generate high-resolution customizable running overlays from FIT, TCX, and GPX files for Instagram Stories, Reels, TikTok, and Strava.">
+  <title>RunOverlay - Social Running Overlay Generator</title>
+
+  <!-- Google Fonts: Inter, Bebas Neue, Anton, Rajdhani, JetBrains Mono, Playfair Display, Caveat, Oswald, Montserrat, Barlow Condensed -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow+Condensed:wght@600;700;800&family=Bebas+Neue&family=Caveat:wght@600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&family=Montserrat:wght@600;700;800&family=Oswald:wght@600;700&family=Playfair+Display:ital,wght@0,600;0,700;1,600&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+  <!-- TOP NAVBAR -->
+  <header class="navbar">
+    <div class="brand">
+      <div class="brand-icon">⚡</div>
+      <span>RUNOVERLAY</span>
+      <span class="brand-badge">PRO</span>
+    </div>
+
+    <div class="nav-actions">
+      <!-- Universal Undo & Redo -->
+      <button id="universalUndoBtn" class="btn btn-secondary" style="padding: 6px 10px; font-size: 0.8rem; display: inline-flex; align-items: center; gap: 4px;" title="Universal Undo (Ctrl+Z)" disabled>
+        <span>↶</span> Undo
+      </button>
+      <button id="universalRedoBtn" class="btn btn-secondary" style="padding: 6px 10px; font-size: 0.8rem; display: inline-flex; align-items: center; gap: 4px;" title="Universal Redo (Ctrl+Y)" disabled>
+        <span>↷</span> Redo
+      </button>
+
+      <!-- Quick Demo Selector -->
+      <select id="quickDemoSelect" class="form-select" style="padding: 6px 10px; font-size: 0.8rem; width: auto; background: var(--bg-secondary);">
+        <option value="5k">⚡ Demo: 5K Speedrun</option>
+        <option value="10k">⛰️ Demo: 10K Trail</option>
+        <option value="21k">🏅 Demo: Half Marathon</option>
+        <option value="intervals">🏁 Demo: 8x400m Laps</option>
+      </select>
+
+      <!-- Unit toggle -->
+      <button id="unitToggleBtn" class="btn btn-secondary" style="padding: 6px 12px; font-size: 0.8rem;" title="Toggle Metric/Imperial">
+        <span id="unitToggleLabel">KM</span>
+      </button>
+
+      <!-- Direct Export Button -->
+      <button id="quickExportBtn" class="btn btn-primary" style="padding: 6px 14px; font-size: 0.82rem;">
+        <span>Export</span> ⬇️
+      </button>
+    </div>
+  </header>
+
+  <!-- MAIN APP CONTAINER -->
+  <main class="app-container">
+
+    <!-- PREVIEW STAGE (LEFT / TOP) -->
+    <section class="preview-stage">
+      <div class="stage-viewport mode-fit" id="stageViewport">
+        <div class="canvas-wrapper" id="canvasWrapper">
+          <canvas id="overlayCanvas"></canvas>
+          <!-- Interactive Selection & Transform Gizmo -->
+          <div id="gizmoOverlay" class="gizmo-overlay">
+            <div id="gizmoBox" class="gizmo-box" style="display: none;">
+              <div class="gizmo-header">
+                <span class="gizmo-title" id="gizmoTitle">Widget</span>
+                <select id="gizmoSubPartSelect" class="gizmo-part-select" title="Target Component">
+                  <option value="widget">📦 Widget</option>
+                  <option value="border">🔲 Border Only</option>
+                </select>
+                <div class="gizmo-actions">
+                  <button type="button" id="gizmoCenterBtn" title="Center Horizontally">↔</button>
+                  <button type="button" id="gizmoRestoreBtn" title="Restore Widget to Original Template Design">↺ Restore</button>
+                  <button type="button" id="gizmoDeleteBtn" title="Delete / Hide Selected Item (Del)">🗑</button>
+                  <button type="button" id="gizmoCloseBtn" title="Deselect">✕</button>
+                </div>
+              </div>
+              <!-- 8 Handles for Resize -->
+              <div class="gizmo-handle handle-nw" data-handle="nw"></div>
+              <div class="gizmo-handle handle-n" data-handle="n"></div>
+              <div class="gizmo-handle handle-ne" data-handle="ne"></div>
+              <div class="gizmo-handle handle-e" data-handle="e"></div>
+              <div class="gizmo-handle handle-se" data-handle="se"></div>
+              <div class="gizmo-handle handle-s" data-handle="s"></div>
+              <div class="gizmo-handle handle-sw" data-handle="sw"></div>
+              <div class="gizmo-handle handle-w" data-handle="w"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ANIMATION TIMELINE PLAYER DOCK -->
+      <div id="animationPlayerDock" class="animation-player-dock">
+        <div class="anim-player-top">
+          <!-- Play / Pause / Reset -->
+          <div class="anim-playback-controls">
+            <button type="button" id="animPlayPauseBtn" class="anim-btn anim-play-btn" title="Play / Pause Run Animation (Space)">
+              <span id="animPlayIcon">▶</span>
+            </button>
+            <button type="button" id="animResetBtn" class="anim-btn anim-icon-btn" title="Restart to 0%">
+              ⏮
+            </button>
+          </div>
+
+          <!-- Timeline Scrubber & Live Progress -->
+          <div class="anim-timeline-wrapper">
+            <input type="range" id="animScrubber" class="anim-slider" min="0" max="1000" value="1000" step="1" title="Drag to scrub run progression">
+            <div class="anim-timeline-markers">
+              <span id="animDistProgress">0.00 / 0.00 km</span>
+              <span id="animTimeProgress">00:00 / 00:00</span>
+              <span id="animPercentProgress">100%</span>
+            </div>
+          </div>
+
+          <!-- Duration, Hold, Loop & Export -->
+          <div class="anim-options-controls">
+            <select id="animDurationSelect" class="anim-select" title="Animation run duration">
+              <option value="5">Run: 5s</option>
+              <option value="10" selected>Run: 10s</option>
+              <option value="15">Run: 15s</option>
+              <option value="20">Run: 20s</option>
+              <option value="30">Run: 30s</option>
+            </select>
+            <select id="animHoldSelect" class="anim-select" title="End shot static preview hold duration">
+              <option value="0">Hold: 0s</option>
+              <option value="3">Hold: 3s</option>
+              <option value="5" selected>Hold: 5s</option>
+              <option value="8">Hold: 8s</option>
+              <option value="10">Hold: 10s</option>
+            </select>
+            <button type="button" id="animLoopToggle" class="anim-btn anim-icon-btn active" title="Toggle Loop Playback">
+              🔁
+            </button>
+            <button type="button" id="animOpenExportModalBtn" class="anim-btn anim-export-pill-btn" title="Export Animated Video">
+              🎬 Export
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="stage-toolbar">
+        <span class="stage-pill" id="aspectRatioPill">9:16 Story</span>
+        <span class="stage-pill" id="templatePill">Story Pro</span>
+        <!-- Undo / Redo in Stage Toolbar -->
+        <div class="stage-undo-group" style="display: inline-flex; gap: 4px;">
+          <button type="button" id="stageUndoBtn" class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem;" title="Universal Undo (Ctrl+Z)" disabled>↶ Undo</button>
+          <button type="button" id="stageRedoBtn" class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem;" title="Universal Redo (Ctrl+Y)" disabled>↷ Redo</button>
+        </div>
+        <!-- Workspace Preview Zoom Controls -->
+        <div class="stage-zoom-group">
+          <button type="button" id="zoomOutBtn" class="zoom-btn" title="Zoom Out (−)">−</button>
+          <button type="button" id="zoomResetBtn" class="zoom-level-btn" title="Reset Zoom / Fit Screen"><span id="zoomLevelText">Fit</span></button>
+          <button type="button" id="zoomInBtn" class="zoom-btn" title="Zoom In (+)">+</button>
+        </div>
+        <button id="toggleInteractiveLayoutBtn" class="btn btn-secondary btn-toggle-active" style="padding: 4px 10px; font-size: 0.75rem;" title="Toggle Interactive Drag & Resize on Canvas">
+          ✋ Drag & Resize: ON
+        </button>
+        <button id="resetAllLayoutBtn" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" title="Reset All Widget Positions to Template Default">
+          ↺ Reset Layout
+        </button>
+        <button id="quickAddTextBtn" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" title="Add Custom Text Sticker">
+          + Add Text
+        </button>
+        <button id="stageSaveTemplateBtn" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.75rem; color: #38bdf8;" title="Save current layout as a custom template">
+          💾 Save Template
+        </button>
+        <button id="resetPhotoPosBtn" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" title="Reset Photo Zoom/Position">
+          Reset Photo
+        </button>
+      </div>
+    </section>
+
+    <!-- CONTROLS PANEL (RIGHT / BOTTOM) -->
+    <section class="controls-panel">
+
+      <!-- TABS NAVIGATION -->
+      <nav class="tabs-nav" id="tabsNav">
+        <button class="tab-btn active" data-tab="dataTab">
+          <span class="tab-icon">📁</span>
+          <span>Activity</span>
+        </button>
+        <button class="tab-btn" data-tab="formatTab">
+          <span class="tab-icon">📐</span>
+          <span>Format</span>
+        </button>
+        <button class="tab-btn" data-tab="splitsTab">
+          <span class="tab-icon">⚡</span>
+          <span>Splits/Laps</span>
+        </button>
+        <button class="tab-btn" data-tab="widgetsTab">
+          <span class="tab-icon">📊</span>
+          <span>Widgets</span>
+        </button>
+        <button class="tab-btn" data-tab="textTab">
+          <span class="tab-icon">✍️</span>
+          <span>Text/Stickers</span>
+        </button>
+        <button class="tab-btn" data-tab="styleTab">
+          <span class="tab-icon">🎨</span>
+          <span>Style</span>
+        </button>
+        <button class="tab-btn" data-tab="exportTab">
+          <span class="tab-icon">💾</span>
+          <span>Export</span>
+        </button>
+      </nav>
+
+      <!-- TAB CONTENT PANES -->
+      <div class="tab-content">
+
+        <!-- TAB 1: DATA & FILE -->
+        <div class="tab-pane active" id="dataTab">
+
+          <div class="section">
+            <div class="section-title">Upload / Drop Any File</div>
+            <div class="dropzone" id="fileDropzone">
+              <input type="file" id="activityFileInput" accept=".fit,.tcx,.gpx,.json">
+              <div class="dropzone-icon">🏃</div>
+              <div class="dropzone-text">Drop .FIT, .TCX, or .GPX file here</div>
+              <div class="dropzone-sub">or click to browse from Garmin, Coros, Strava, Apple Watch</div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">Activity Info (Editable)</div>
+            <div class="form-group">
+              <label class="form-label">Activity Title</label>
+              <input type="text" id="inputActivityTitle" class="form-input" placeholder="e.g. Sunday Morning Long Run">
+            </div>
+
+            <div class="grid-2">
+              <div class="form-group">
+                <label class="form-label">Runner Handle</label>
+                <input type="text" id="inputRunnerName" class="form-input" placeholder="@runner_alex">
+              </div>
+              <div class="form-group">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                  <label class="form-label" style="margin-bottom: 0;">Location</label>
+                  <label style="font-size: 0.72rem; color: var(--text-muted); display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                    <input type="checkbox" id="toggleHeaderLocation" checked> Show in Header
+                  </label>
+                </div>
+                <input type="text" id="inputLocationName" class="form-input" placeholder="Central Park, NY">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Weather Badge (Optional)</label>
+              <input type="text" id="inputWeatherText" class="form-input" placeholder="18°C ☀️ Sunny">
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 2: FORMAT & TEMPLATES -->
+        <div class="tab-pane" id="formatTab">
+          <div class="section">
+            <div class="section-title">Aspect Ratio</div>
+            <div class="grid-4" id="aspectRatioGrid">
+              <div class="choice-card active" data-ratio="9:16">
+                <div class="choice-card-icon">📱</div>
+                <div class="choice-card-label">9:16</div>
+                <div style="font-size: 0.65rem; color: var(--text-muted);">Stories / Reels</div>
+              </div>
+              <div class="choice-card" data-ratio="1:1">
+                <div class="choice-card-icon">⏹️</div>
+                <div class="choice-card-label">1:1</div>
+                <div style="font-size: 0.65rem; color: var(--text-muted);">Square Post</div>
+              </div>
+              <div class="choice-card" data-ratio="4:5">
+                <div class="choice-card-icon">📸</div>
+                <div class="choice-card-label">4:5</div>
+                <div style="font-size: 0.65rem; color: var(--text-muted);">Portrait Feed</div>
+              </div>
+              <div class="choice-card" data-ratio="16:9">
+                <div class="choice-card-icon">🖥️</div>
+                <div class="choice-card-label">16:9</div>
+                <div style="font-size: 0.65rem; color: var(--text-muted);">Landscape</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- SAVED CUSTOM TEMPLATES SECTION -->
+          <div class="section" id="savedTemplatesSection">
+            <div class="section-title" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <span>My Saved Templates</span>
+              <div style="display: flex; gap: 6px; align-items: center;">
+                <span id="savedTemplatesCount" style="font-size: 0.7rem; background: var(--bg-secondary); color: var(--accent-volt); padding: 2px 7px; border-radius: 4px; border: 1px solid var(--border-subtle); font-weight: 700;">0 Saved</span>
+                <button type="button" id="importTemplateBtn" class="btn btn-secondary" style="padding: 2px 8px; font-size: 0.72rem;" title="Import template from .json file">📥 Import</button>
+                <input type="file" id="importTemplateFileInput" accept=".json" style="display: none;">
+                <button type="button" id="exportAllTemplatesBtn" class="btn btn-secondary" style="padding: 2px 8px; font-size: 0.72rem;" title="Export all saved templates to .json backup">📤 Backup All</button>
+              </div>
+            </div>
+
+            <!-- Save Current Template Form Box -->
+            <div id="saveTemplateFormBox" style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-subtle); border-radius: 10px; padding: 12px; margin-bottom: 12px; transition: border-color 0.3s;">
+              <div style="font-size: 0.78rem; font-weight: 700; color: #fff; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;">
+                <span>💾 Save Current Design as Template</span>
+                <span style="font-size: 0.68rem; color: var(--text-muted); font-weight: normal;">Preserves layout, positions & styling</span>
+              </div>
+              <div style="display: flex; gap: 8px;">
+                <input type="text" id="saveTemplateNameInput" class="form-input" placeholder="Template Name (e.g. My Trail Race Story)" style="flex: 1; font-size: 0.8rem; padding: 7px 10px;">
+                <button type="button" id="saveCurrentTemplateBtn" class="btn btn-primary" style="padding: 7px 14px; font-size: 0.8rem; white-space: nowrap; font-weight: 700;">
+                  <span>Save</span> 💾
+                </button>
+              </div>
+            </div>
+
+            <!-- Saved Templates List Container -->
+            <div id="savedTemplatesList" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 6px;">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">Preset Layout Templates</div>
+            <div class="grid-2" id="templateGrid">
+              <div class="choice-card active" data-template="story-pro">
+                <div class="choice-card-label">⚡ Story Pro</div>
+                <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">Header, route map, hero stat, secondary metrics & splits</div>
+              </div>
+              <div class="choice-card" data-template="split-focus">
+                <div class="choice-card-label">📊 Split Focus</div>
+                <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">Spotlight split card with full multi-km bar graph</div>
+              </div>
+              <div class="choice-card" data-template="minimal-hud">
+                <div class="choice-card-label">✨ Minimal HUD</div>
+                <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">Floating pill telemetry overlay for clean photo posts</div>
+              </div>
+              <div class="choice-card" data-template="stat-beast">
+                <div class="choice-card-label">🔥 Stat Beast</div>
+                <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">Comprehensive display: Map, elevation, HR zones & full splits</div>
+              </div>
+              <div class="choice-card" data-template="route-focus">
+                <div class="choice-card-label">🗺️ Route Focus</div>
+                <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">Large prominent GPS route trajectory with floating HUD</div>
+              </div>
+              <div class="choice-card" data-template="lap-workout">
+                <div class="choice-card-label">🏁 Lap Workout</div>
+                <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">Track interval repeats with lap splits spotlight</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 3: SPLITS & LAPS CONTROLS -->
+        <div class="tab-pane" id="splitsTab">
+          <!-- Split Distance Interval Selector (Manual Laps / Custom Distance) -->
+          <div class="section">
+            <div class="section-title">Split Distance Interval (Manual / Custom)</div>
+            <div class="form-group">
+              <label class="form-label">Calculate Splits Every:</label>
+              <select id="splitIntervalSelect" class="form-select">
+                <option value="1000" selected>1 Kilometer (1,000m - Standard)</option>
+                <option value="500">500 Meters (Half-km intervals)</option>
+                <option value="400">400 Meters (Track Lap)</option>
+                <option value="2000">2 Kilometers (2,000m)</option>
+                <option value="5000">5 Kilometers (5,000m)</option>
+                <option value="1609.34">1 Mile (1,609m - Imperial)</option>
+                <option value="custom">Custom Distance (Meters)...</option>
+              </select>
+            </div>
+            <div class="form-group" id="customSplitGroup" style="display: none;">
+              <label class="form-label">Custom Distance in Meters</label>
+              <input type="number" id="customSplitInput" class="form-input" value="800" min="100" max="50000" step="50" placeholder="e.g. 800">
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">Split Data Source</div>
+            <div class="grid-2" id="splitSourceGrid">
+              <div class="choice-card active" data-source="km">
+                <div class="choice-card-icon">📏</div>
+                <div class="choice-card-label">Distance Splits</div>
+                <div style="font-size: 0.7rem; color: var(--text-muted);">Calculated per interval</div>
+              </div>
+              <div class="choice-card" data-source="laps">
+                <div class="choice-card-icon">⏱️</div>
+                <div class="choice-card-label">Device Recorded Laps</div>
+                <div style="font-size: 0.7rem; color: var(--text-muted);">Watch button laps</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">Split Widget Presentation Mode</div>
+            <div class="grid-2" id="splitWidgetModeGrid">
+              <div class="choice-card active" data-mode="bars">
+                <div class="choice-card-icon">📶</div>
+                <div class="choice-card-label">Bar Chart Equalizer</div>
+                <div style="font-size: 0.7rem; color: var(--text-muted);">Visual split comparison</div>
+              </div>
+              <div class="choice-card" data-mode="highlight">
+                <div class="choice-card-icon">⚡</div>
+                <div class="choice-card-label">Single Split Spotlight</div>
+                <div style="font-size: 0.7rem; color: var(--text-muted);">Hero card for best/key split</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">Spotlight Target Split</div>
+            <div class="form-group">
+              <label class="form-label">Choose which split to highlight:</label>
+              <select id="splitTargetSelect" class="form-select">
+                <option value="fastest">⚡ Fastest Split</option>
+                <option value="slowest">🐢 Slowest Split</option>
+                <option value="last">🏁 Final Split</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- SPLIT TABLE CUSTOMIZATION & DATA COLUMNS (NEW USER REQUIREMENT) -->
+          <div class="section">
+            <div class="section-title">
+              <span>Split Data Columns To Display</span>
+            </div>
+            <div style="font-size: 0.72rem; color: var(--text-muted); margin-bottom: 6px;">
+              Select which metrics appear in the split table widget:
+            </div>
+            <div class="split-columns-grid">
+              <label class="split-col-checkbox-label">
+                <input type="checkbox" id="colSplitTime" checked> Time
+              </label>
+              <label class="split-col-checkbox-label">
+                <input type="checkbox" id="colSplitPace" checked> Pace
+              </label>
+              <label class="split-col-checkbox-label">
+                <input type="checkbox" id="colSplitDelta" checked> +/- Split Delta
+              </label>
+              <label class="split-col-checkbox-label">
+                <input type="checkbox" id="colSplitAvgHr" checked> Avg HR
+              </label>
+              <label class="split-col-checkbox-label">
+                <input type="checkbox" id="colSplitMaxHr"> Max HR
+              </label>
+              <label class="split-col-checkbox-label">
+                <input type="checkbox" id="colSplitMinHr"> Min HR
+              </label>
+              <label class="split-col-checkbox-label">
+                <input type="checkbox" id="colSplitCadence"> Cadence
+              </label>
+              <label class="split-col-checkbox-label">
+                <input type="checkbox" id="colSplitElev" checked> Elevation
+              </label>
+            </div>
+
+            <!-- Fastest Split Highlight Toggle -->
+            <div class="toggle-item" style="margin-top: 10px;">
+              <div class="toggle-label-group">
+                <span class="toggle-icon">⚡</span>
+                <div>
+                  <div class="toggle-text">Fastest Split Highlight</div>
+                  <div class="toggle-desc">Show lightning icon and highlight color</div>
+                </div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="toggleFastestSplitHighlight" checked>
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <!-- Custom Split Widget Title -->
+            <div class="form-group" style="margin-top: 10px;">
+              <label class="form-label">Split Widget Title</label>
+              <input type="text" id="inputSplitWidgetTitle" class="form-input" placeholder="SPLITS (or leave empty for default)">
+            </div>
+          </div>
+
+          <!-- EDIT INDIVIDUAL SPLIT ROW LABELS -->
+          <div class="section">
+            <div class="section-title">
+              <span>Edit Individual Split Row Names</span>
+              <button id="resetSplitLabelsBtn" class="btn btn-secondary" style="padding: 2px 8px; font-size: 0.72rem;">↺ Reset Names</button>
+            </div>
+            <div style="font-size: 0.72rem; color: var(--text-muted); margin-bottom: 4px;">
+              Rename any split row (e.g. Km 1 → Warmup, Km 5 → Fast Mile, Km 10 → Cooldown):
+            </div>
+            <div id="splitRowRenamerList" class="split-renamer-list">
+              <!-- Populated dynamically by JS -->
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">
+              <span>Splits Breakdown Table</span>
+              <span id="splitsTableSummaryBadge" style="font-size: 0.72rem; color: var(--accent-volt); font-weight: 600;"></span>
+            </div>
+            <div class="splits-table-container">
+              <table class="splits-table">
+                <thead>
+                  <tr>
+                    <th>Split</th>
+                    <th>Time</th>
+                    <th>Pace</th>
+                    <th>Avg HR</th>
+                    <th>Elev</th>
+                  </tr>
+                </thead>
+                <tbody id="splitsTableBody">
+                  <tr><td colspan="5" style="text-align:center; color: var(--text-muted);">Loading splits...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 4: WIDGETS CONTROLS -->
+        <div class="tab-pane" id="widgetsTab">
+          <div class="section">
+            <div class="section-title">Active Widgets Toggle</div>
+
+            <!-- Header Widget -->
+            <div class="toggle-item">
+              <div class="toggle-label-group">
+                <span class="toggle-icon">🏷️</span>
+                <div>
+                  <div class="toggle-text">Header Widget</div>
+                  <div class="toggle-desc">Title, date, runner handle, weather</div>
+                </div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="toggleHeader" checked>
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <!-- Route Map Widget -->
+            <div class="toggle-item">
+              <div class="toggle-label-group">
+                <span class="toggle-icon">🗺️</span>
+                <div>
+                  <div class="toggle-text">GPS Route Map</div>
+                  <div class="toggle-desc">Activity trajectory path</div>
+                </div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="toggleMap" checked>
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <!-- Hero Metric Widget -->
+            <div class="toggle-item">
+              <div class="toggle-label-group">
+                <span class="toggle-icon">🏃</span>
+                <div>
+                  <div class="toggle-text">Hero Stat Card</div>
+                  <div class="toggle-desc">Big bold focal number</div>
+                </div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="toggleHero" checked>
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <!-- Secondary Metrics Widget -->
+            <div class="toggle-item">
+              <div class="toggle-label-group">
+                <span class="toggle-icon">📊</span>
+                <div>
+                  <div class="toggle-text">Secondary Metrics Grid</div>
+                  <div class="toggle-desc">Time, pace, HR, cadence, elevation</div>
+                </div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="toggleMetrics" checked>
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <!-- Splits Widget -->
+            <div class="toggle-item">
+              <div class="toggle-label-group">
+                <span class="toggle-icon">⚡</span>
+                <div>
+                  <div class="toggle-text">Splits & Laps Widget</div>
+                  <div class="toggle-desc">Bar chart or split focus card</div>
+                </div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="toggleSplits" checked>
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <!-- Pace Graph Widget -->
+            <div class="toggle-item">
+              <div class="toggle-label-group">
+                <span class="toggle-icon">📈</span>
+                <div>
+                  <div class="toggle-text">Pace Graph</div>
+                  <div class="toggle-desc">Continuous speed curve across distance</div>
+                </div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="togglePaceGraph">
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <!-- Heart Rate Graph Widget -->
+            <div class="toggle-item">
+              <div class="toggle-label-group">
+                <span class="toggle-icon">💓</span>
+                <div>
+                  <div class="toggle-text">Heart Rate Graph</div>
+                  <div class="toggle-desc">Heart rate profile across distance</div>
+                </div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="toggleHrGraph">
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <!-- Average Heart Rate Badge Widget -->
+            <div class="toggle-item">
+              <div class="toggle-label-group">
+                <span class="toggle-icon">❤️</span>
+                <div>
+                  <div class="toggle-text">Average Heart Rate Badge</div>
+                  <div class="toggle-desc">Dedicated avg HR pill or card</div>
+                </div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="toggleAvgHrBadge">
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <!-- Elevation Profile Widget -->
+            <div class="toggle-item">
+              <div class="toggle-label-group">
+                <span class="toggle-icon">⛰️</span>
+                <div>
+                  <div class="toggle-text">Elevation Profile Chart</div>
+                  <div class="toggle-desc">Terrain altitude graph</div>
+                </div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="toggleElevation">
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <!-- HR Zones Widget -->
+            <div class="toggle-item">
+              <div class="toggle-label-group">
+                <span class="toggle-icon">📊</span>
+                <div>
+                  <div class="toggle-text">Heart Rate Zones Bar</div>
+                  <div class="toggle-desc">Z1-Z5 distribution bar</div>
+                </div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="toggleHrZones">
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <!-- Brand Watermark Widget -->
+            <div class="toggle-item">
+              <div class="toggle-label-group">
+                <span class="toggle-icon">⚡</span>
+                <div>
+                  <div class="toggle-text">Social Brand Badge</div>
+                  <div class="toggle-desc">Strava, Nike, or custom watermark</div>
+                </div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="toggleBrand" checked>
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <!-- WIDGET DESIGN VARIANTS (EXPANDED TO 6-7 STYLES EACH) -->
+          <div class="section">
+            <div class="section-title">Widget Design Styles</div>
+
+            <div class="form-group">
+              <label class="form-label">Header Layout Style & Template</label>
+              <select id="headerDesignSelect" class="form-select">
+                <option value="modern" selected>Modern Clean (Left title, date, runner)</option>
+                <option value="centered-hero">Centered Hero (Centered title & date badge)</option>
+                <option value="stacked-editorial">Stacked Editorial (Headline with date kicker & divider)</option>
+                <option value="split-banner">Split Calendar Banner (Title + calendar day box)</option>
+                <option value="retro-cyber">Retro Cyber HUD (Bracket tech frame & crosses)</option>
+                <option value="badge-shield">Collegiate Shield (Crest & athletic stars)</option>
+                <option value="minimal-topbar">Minimal Top Bar (Sleek floating pill HUD)</option>
+                <option value="magazine-cover">Magazine Headline (Bold cover layout)</option>
+                <option value="athletic">Sport Athletic HUD (Category chip & runner)</option>
+                <option value="pill">Glass Banner Pill (Rounded with avatar)</option>
+                <option value="minimalist-stamp">Passport Stamp (Border seal & date)</option>
+                <option value="hud-flight">Flight HUD (Instrument crosshairs & telemetry)</option>
+                <option value="race-ticker">Neon Racing Ticker (Tape banner with dots)</option>
+                <option value="vertical-sidebar-badge">Vertical Accent Card (Stacked Headline with Sidebar Stripe)</option>
+                <option value="running-bib-header">Marathon Race Bib Header (Bib Number & Stamped Seal)</option>
+                <option value="broadcast-lowerthird">Esports / TV Broadcast Banner (Lower-Third Live Ribbon)</option>
+                <option value="architect-monolith">Architectural Monolith (Big Calendar Block & Condensed Type)</option>
+              </select>
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 6px; padding: 5px 10px; background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: 6px;">
+                <span style="font-size: 0.74rem; color: var(--text-normal);">📍 Show Location in Header</span>
+                <label class="switch" style="transform: scale(0.85); margin-bottom: 0;"><input type="checkbox" id="headerShowLocationToggle" checked><span class="slider"></span></label>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Route Map Style</label>
+              <select id="mapDesignSelect" class="form-select">
+                <option value="bare-route">Pure Route (Transparent / No Backdrop)</option>
+                <option value="bare-glow">Glowing Route (Transparent / No Backdrop)</option>
+                <option value="bare-speed">Speed Heatmap Route (No Backdrop)</option>
+                <option value="glow" selected>Neon Glowing Polyline (Card)</option>
+                <option value="card">Technical Card (with corner crosshairs)</option>
+                <option value="milestones">Milestone Pins (1k, 2k, 3k numbered dots)</option>
+                <option value="minimal">Hairline Minimal (Ultra-clean stroke)</option>
+                <option value="neon-pulse">Electric Neon Pulse & Tech Grid</option>
+                <option value="framed-polaroid">Polaroid Photo Frame & Tape</option>
+                <option value="gradient-speed">Pace Speed Dynamic Gradient</option>
+                <option value="cyber-wireframe">Cyber Grid & Compass HUD (Telemetry Grid & Coordinates)</option>
+                <option value="radar-screen">Tactical Radar Screen (Concentric Radar Rings & Beam)</option>
+                <option value="vintage-topo-map">Topographic Elevation Contours (Organic Terrain Rings)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Hero Metric Display Style</label>
+              <select id="heroDesignSelect" class="form-select">
+                <option value="mega" selected>Mega Athletic Display</option>
+                <option value="card">Structured Stats Card</option>
+                <option value="boxed-bracket">HUD Corner Brackets (Glowing Anchors)</option>
+                <option value="stacked-duo">Stacked Duo-Tone (Split Bar)</option>
+                <option value="badge-pill">Athletic Pill Capsule (Icon Ribbon)</option>
+                <option value="cyber-glass">Frosted Cyber Glass (Neon Rim)</option>
+                <option value="racing-bib">Official Marathon Bib (Perforated)</option>
+                <option value="minimal-line">Ultra-Minimal Hairline Stripe</option>
+                <option value="split-pill">Two-Tone Split Pill (with icon)</option>
+                <option value="outline">Clean Outlined (No background card)</option>
+                <option value="tape-sticker">Athletic Tape Sticker (Racing hazard)</option>
+                <option value="digital-lcd">Retro Stopwatch LCD (Segment glow)</option>
+                <option value="speedometer">Speedometer Arc Gauge (Radial curve)</option>
+                <option value="vertical-totem">Vertical Monolith Totem (Stacked Mega Typography)</option>
+                <option value="precision-hud-gauge">Precision Arc Gauge HUD (Dual Calibrated Dials)</option>
+                <option value="tactical-crosshair">Tactical Crosshair Optic (Reticle & Corner Anchors)</option>
+                <option value="angled-speed-slash">Dynamic Speed Slash (Athletic Slanted Gradient)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Secondary Metrics Grid Style</label>
+              <select id="metricsDesignSelect" class="form-select">
+                <option value="grid" selected>Glass Cards Grid (Multi-Col)</option>
+                <option value="cards-2col">2-Column Bold Stat Cards (Indicator Bar)</option>
+                <option value="vertical-stacked-hud">Vertical Telemetry Rows (Icon + Value)</option>
+                <option value="vertical-minimal-stack">Vertical Minimalist Stack (Clean Hairline Rows)</option>
+                <option value="vertical-pill-stack">Vertical Capsule Pills (Floating Complications)</option>
+                <option value="vertical-timeline-flow">Vertical Telemetry Timeline (Glowing Axis & Nodes)</option>
+                <option value="vertical-data-ladder">Vertical Telemetry Ladder (Stepped Brackets & Leader Dots)</option>
+                <option value="vertical-athletic-cards">Vertical Athletic Cards (Rank Badges #01)</option>
+                <option value="split-scoreboard">LED Marathon Scoreboard (Segmented)</option>
+                <option value="cyber-brackets">Cyberpunk Corner Brackets</option>
+                <option value="hex-badges">Chamfered Tech Badges (Athletic Hex)</option>
+                <option value="horizontal-ticker">Horizontal Ribbon Ticker (Dot Dividers)</option>
+                <option value="strip">Unified HUD Strip (Divided bar)</option>
+                <option value="badges">Pill Badges (Outlined pills)</option>
+                <option value="compact">Floating Compact (No boxes)</option>
+                <option value="circular-gauges">Radial Circular Gauge Rings</option>
+                <option value="editorial-table">Official Marathon Results Table</option>
+                <option value="pill-row">Horizontal Capsule Pill Row</option>
+                <option value="horizontal-pipeline">Horizontal Telemetry Pipeline (Inline Stream //)</option>
+                <option value="horizontal-chips">Horizontal Stat Chips (Icon + Label + Value inline)</option>
+                <option value="horizontal-slash-minimal">Horizontal Minimalist Slash (Clean Floating)</option>
+                <option value="horizontal-linear-cards">Horizontal Leaderboard Rows (Left/Right)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Splits Bar Chart Style</label>
+              <select id="splitsDesignSelect" class="form-select">
+                <option value="vertical-bars" selected>Vertical Columns (Fastest glowing)</option>
+                <option value="horizontal-bars">Horizontal Progress Bars</option>
+                <option value="pace-table">Split Table with Customizable Data</option>
+                <option value="pace-delta-bars">Pace Delta Equalizer (+/- Center Axis)</option>
+                <option value="card-grid">Compact Multi-Card Split Tiles</option>
+                <option value="speed-dots">Connected Pace Dots Graph</option>
+                <option value="split-bubbles">Floating Rounded Split Bubbles</option>
+                <option value="vertical-split-cards">Vertical Split Cards (Stacked Interval Tiles with Delta)</option>
+                <option value="split-ladder-timeline">Vertical Route Timeline (Mile/KM Route Wire)</option>
+                <option value="compact-dot-matrix">Compact Pace Dot Matrix (Pace Intensity Grid)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Split Highlight Card Style</label>
+              <select id="splitHighlightDesignSelect" class="form-select">
+                <option value="spotlight" selected>Spotlight Card (Big pace & stats)</option>
+                <option value="bib">Race Bib Badge (Interval bib style)</option>
+                <option value="medal-podium">Gold Medal Trophy Podium</option>
+                <option value="polaroid-clip">Paper Note with Paperclip</option>
+                <option value="trophy-cup">Trophy Podium Banner (Gold Ribbon & Fast Split)</option>
+                <option value="split-terminal">Digital Split Terminal (Monospace Code Prompt)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Elevation Profile Style</label>
+              <select id="elevationDesignSelect" class="form-select">
+                <option value="area" selected>Smooth Gradient Area</option>
+                <option value="topo-contours">Topographic Contour Fill</option>
+                <option value="gradient-altitude">High-Contrast Altitude Gradient</option>
+                <option value="line">Minimalist Line Graph</option>
+                <option value="stepped-gradient">Stepped Terrain Canyon</option>
+                <option value="mountain-peaks">Mountain Peaks & Summit Flag</option>
+                <option value="stepped-bars">Stepped Altitude Columns (Quantized Terrain Bars)</option>
+                <option value="dual-fill">Dual-Zone Climb & Descent Gradient (Ascent vs Descent)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Pace Graph Style</label>
+              <select id="paceGraphDesignSelect" class="form-select">
+                <option value="area" selected>Smooth Translucent Area</option>
+                <option value="bar-histogram">Pace Bar Histogram</option>
+                <option value="cyber-hud-pace">Cyberpunk HUD with Target Pace Line</option>
+                <option value="line">Crisp High-Precision Line</option>
+                <option value="gradient-zone">Multi-Zone Color Fill</option>
+                <option value="stepped-splits">Stepped Splits with Avg Pace Dash</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Heart Rate Graph Style</label>
+              <select id="hrGraphDesignSelect" class="form-select">
+                <option value="filled-area" selected>Red Gradient Area</option>
+                <option value="zone-gradient-strip">Z1-Z5 Multi-Zone Continuous Gradient</option>
+                <option value="cardiac-monitor">Cardiac Monitor Oscilloscope CRT</option>
+                <option value="ecg-wave">Colored ECG Wave (Zones)</option>
+                <option value="zone-bars">5-Zone Vertical Frequency Bars</option>
+                <option value="pulse-glow">Glowing Pulse Wave with Alert</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Average Heart Rate Badge Style</label>
+              <select id="hrBadgeDesignSelect" class="form-select">
+                <option value="pill" selected>Pulsing Heart Pill</option>
+                <option value="zone-badge">Intensity Zone Blocks Badge</option>
+                <option value="lcd-pulse">Cardiac Monitor Oscilloscope LCD</option>
+                <option value="card">Heart Stats Card</option>
+                <option value="heart-gauge">Circular Radial Heart Gauge</option>
+                <option value="compact-tag">Smartwatch Complication Tag</option>
+                <option value="vertical-hr-thermometer">Vertical Zone Thermometer (5-Zone Meter Column)</option>
+                <option value="tactical-ecg-card">ECG Telemetry Strip (Oscilloscope CRT Strip)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Hero Metric Selection -->
+          <div class="section">
+            <div class="section-title">Hero Metric Display</div>
+            <div class="grid-3" id="heroMetricGrid">
+              <div class="choice-card active" data-hero="distance">
+                <div class="choice-card-icon">📏</div>
+                <div class="choice-card-label">Distance</div>
+              </div>
+              <div class="choice-card" data-hero="time">
+                <div class="choice-card-icon">⏱️</div>
+                <div class="choice-card-label">Time</div>
+              </div>
+              <div class="choice-card" data-hero="pace">
+                <div class="choice-card-icon">⚡</div>
+                <div class="choice-card-label">Avg Pace</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Selected Widget Layout Position Adjuster -->
+          <div class="section">
+            <div class="section-title">
+              <span>Widget Position & Size</span>
+              <button id="resetSelectedWidgetPosBtn" class="btn btn-secondary" style="padding: 2px 8px; font-size: 0.72rem;">↺ Reset Pos</button>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Selected Widget: <strong id="selectedWidgetNameLabel" style="color:var(--accent-volt);">None (Click canvas)</strong></label>
+            </div>
+            <div class="grid-2">
+              <div class="form-group">
+                <label class="form-label">Position X (<span id="widgetPosXVal">--</span>)</label>
+                <input type="range" id="widgetPosXSlider" class="form-slider" min="0" max="1000" value="50">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Position Y (<span id="widgetPosYVal">--</span>)</label>
+                <input type="range" id="widgetPosYSlider" class="form-slider" min="0" max="1800" value="100">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Width (<span id="widgetWidthVal">--</span>)</label>
+                <input type="range" id="widgetWidthSlider" class="form-slider" min="100" max="1080" value="970">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Height (<span id="widgetHeightVal">--</span>)</label>
+                <input type="range" id="widgetHeightSlider" class="form-slider" min="30" max="800" value="120">
+              </div>
+            </div>
+            <button id="centerSelectedWidgetBtn" class="btn btn-secondary" style="width: 100%; margin-top: 6px;">
+              ↔ Center Widget Horizontally
+            </button>
+          </div>
+
+          <!-- INDIVIDUAL ELEMENT INSPECTOR & STYLER -->
+          <div class="section" id="elementInspectorSection">
+            <div class="section-title">
+              <span>🎨 Individual Element Styler</span>
+              <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                <button type="button" id="inspectorRestoreTemplateBtn" class="btn btn-secondary" style="padding: 2px 8px; font-size: 0.72rem; color: #38bdf8;" title="Restore this widget to its original template design">↺ Restore Template</button>
+                <button type="button" id="inspectorDeleteElementBtn" class="btn btn-secondary" style="padding: 2px 8px; font-size: 0.72rem; color: #f87171;" title="Delete or hide selected widget">🗑 Delete Widget</button>
+                <button type="button" id="inspectorResetBtn" class="btn btn-secondary" style="padding: 2px 8px; font-size: 0.72rem;" title="Reset style overrides for this element">Reset Style</button>
+              </div>
+            </div>
+            <div style="font-size: 0.72rem; color: var(--text-muted); margin-bottom: 8px;">
+              Customize font, size scale, color, alignment and background for any individual element on the canvas.
+            </div>
+
+            <!-- Target Element Selector -->
+            <div class="form-group">
+              <label class="form-label">Element to Style:</label>
+              <select id="inspectorElementSelect" class="form-select">
+                <option value="header">🏷️ Header (Title, Subtitle, Date & Time)</option>
+                <option value="hero">🏆 Hero Metric (Distance / Main Stat)</option>
+                <option value="metrics">📊 Secondary Metrics Grid (Pace, Time, HR, etc.)</option>
+                <option value="splits">📶 Splits Table / Bar Chart</option>
+                <option value="splitHighlight">⚡ Split Spotlight Card</option>
+                <option value="map">🗺️ Route Map</option>
+                <option value="elevation">⛰️ Elevation Profile</option>
+                <option value="hrZones">❤️ Heart Rate Zones</option>
+                <option value="paceGraph">📈 Pace Graph</option>
+                <option value="hrGraph">💓 Heart Rate Graph</option>
+                <option value="hrBadge">🩺 Average Heart Rate Badge</option>
+                <option value="brand">🏷️ Social Brand / Watermark</option>
+                <option value="__bg_photo__">🖼️ Background Photo (Pan, Zoom & Fit)</option>
+              </select>
+            </div>
+
+            <!-- Target Sub-Part / Component Selector (NEW USER REQUIREMENT) -->
+            <div class="form-group">
+              <label class="form-label" style="display: flex; justify-content: space-between; align-items: center;">
+                <span>Component / Sub-Part:</span>
+                <span id="inspectorSubPartBadge" style="font-size: 0.7rem; color: var(--accent-volt); font-weight: 700;">Entire Widget</span>
+              </label>
+              <select id="inspectorSubPartSelect" class="form-select">
+                <option value="widget">📦 Entire Widget</option>
+                <option value="bg">🔲 Background Border Only (Resize & Style)</option>
+                <optgroup id="inspectorSubPartGroup" label="Individual Sub-Elements (Move X, Y, Z)">
+                  <!-- Dynamically populated based on selected widget -->
+                </optgroup>
+              </select>
+            </div>
+
+            <!-- BACKGROUND BORDER CONTROLS (Resize Only Border - NEW USER REQUIREMENT) -->
+            <div id="inspectorBgControlsContainer" class="inspector-card" style="display: none; margin-bottom: 12px; background: rgba(0, 240, 255, 0.04); border: 1px dashed rgba(0, 240, 255, 0.35); border-radius: 8px; padding: 10px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <span style="font-size: 0.75rem; font-weight: 700; color: #00f0ff;">🔲 Background Border Only</span>
+                <div style="display: flex; gap: 4px;">
+                  <button type="button" id="inspectorDeleteBgBtn" class="btn btn-secondary" style="padding: 1px 6px; font-size: 0.7rem; color: #f87171;" title="Delete / Hide this background border">🗑 Delete Border</button>
+                  <button type="button" id="inspectorResetBgBtn" class="btn btn-secondary" style="padding: 1px 6px; font-size: 0.7rem;">↺ Reset</button>
+                </div>
+              </div>
+              <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 8px; font-size: 0.72rem; flex-wrap: wrap;">
+                <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; color: var(--text-normal);">
+                  <input type="checkbox" id="inspectorBgShowBgToggle" checked> Show Fill
+                </label>
+                <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; color: var(--text-normal);">
+                  <input type="checkbox" id="inspectorBgShowBorderToggle" checked> Show Border
+                </label>
+                <button type="button" id="inspectorBgTextOnlyBtn" class="btn btn-secondary" style="padding: 1px 6px; font-size: 0.7rem; margin-left: auto; color: var(--accent-volt);" title="Strip background and border, keep only pure floating text">📝 Make Text Only</button>
+              </div>
+
+              <!-- Width Delta Slider & Input -->
+              <div class="form-group" style="margin-bottom: 6px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                  <label class="form-label" style="margin-bottom: 0; font-size: 0.72rem;">Border Width Delta:</label>
+                  <div style="display: flex; align-items: center; gap: 2px;">
+                    <input type="number" id="inspectorBgWidthInput" class="form-input" min="-300" max="300" step="1" value="0" style="width: 60px; padding: 1px 4px; font-size: 0.72rem; text-align: right;">
+                    <span style="font-size: 0.7rem; color: var(--text-muted);">px</span>
+                  </div>
+                </div>
+                <input type="range" id="inspectorBgWidthSlider" class="form-slider" min="-200" max="200" step="2" value="0">
+              </div>
+
+              <!-- Height Delta Slider & Input -->
+              <div class="form-group" style="margin-bottom: 6px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                  <label class="form-label" style="margin-bottom: 0; font-size: 0.72rem;">Border Height Delta:</label>
+                  <div style="display: flex; align-items: center; gap: 2px;">
+                    <input type="number" id="inspectorBgHeightInput" class="form-input" min="-300" max="300" step="1" value="0" style="width: 60px; padding: 1px 4px; font-size: 0.72rem; text-align: right;">
+                    <span style="font-size: 0.7rem; color: var(--text-muted);">px</span>
+                  </div>
+                </div>
+                <input type="range" id="inspectorBgHeightSlider" class="form-slider" min="-200" max="200" step="2" value="0">
+              </div>
+
+              <!-- Offset X & Offset Y -->
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 6px;">
+                <div class="form-group" style="margin-bottom: 0;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                    <label class="form-label" style="margin-bottom: 0; font-size: 0.72rem;">Offset X:</label>
+                    <input type="number" id="inspectorBgOffsetXInput" class="form-input" min="-300" max="300" step="1" value="0" style="width: 48px; padding: 1px 4px; font-size: 0.72rem; text-align: right;">
+                  </div>
+                  <input type="range" id="inspectorBgOffsetXSlider" class="form-slider" min="-150" max="150" step="1" value="0">
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                    <label class="form-label" style="margin-bottom: 0; font-size: 0.72rem;">Offset Y:</label>
+                    <input type="number" id="inspectorBgOffsetYInput" class="form-input" min="-300" max="300" step="1" value="0" style="width: 48px; padding: 1px 4px; font-size: 0.72rem; text-align: right;">
+                  </div>
+                  <input type="range" id="inspectorBgOffsetYSlider" class="form-slider" min="-150" max="150" step="1" value="0">
+                </div>
+              </div>
+
+              <!-- Radius & Stroke Width -->
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 6px;">
+                <div class="form-group" style="margin-bottom: 0;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                    <label class="form-label" style="margin-bottom: 0; font-size: 0.72rem;">Corner Radius:</label>
+                    <input type="number" id="inspectorBgRadiusInput" class="form-input" min="0" max="60" step="1" value="16" style="width: 48px; padding: 1px 4px; font-size: 0.72rem; text-align: right;">
+                  </div>
+                  <input type="range" id="inspectorBgRadiusSlider" class="form-slider" min="0" max="50" step="1" value="16">
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                    <label class="form-label" style="margin-bottom: 0; font-size: 0.72rem;">Stroke Width:</label>
+                    <input type="number" id="inspectorBgBorderWidthInput" class="form-input" min="0" max="16" step="0.5" value="1" style="width: 48px; padding: 1px 4px; font-size: 0.72rem; text-align: right;">
+                  </div>
+                  <input type="range" id="inspectorBgBorderWidthSlider" class="form-slider" min="0" max="12" step="0.5" value="1">
+                </div>
+              </div>
+
+              <!-- Stroke Color & Fill Color -->
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label class="form-label" style="font-size: 0.7rem;">Stroke Color:</label>
+                  <div style="display: flex; gap: 4px; align-items: center;">
+                    <input type="color" id="inspectorBgBorderColorInput" value="#333344" style="width: 28px; height: 26px; padding: 0; border: none; border-radius: 4px; cursor: pointer;">
+                    <input type="text" id="inspectorBgBorderColorHex" class="form-input" style="flex: 1; padding: 1px 4px; font-size: 0.7rem;" placeholder="default">
+                  </div>
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label class="form-label" style="font-size: 0.7rem;">Fill Color:</label>
+                  <div style="display: flex; gap: 4px; align-items: center;">
+                    <input type="color" id="inspectorBgFillColorInput" value="#14141e" style="width: 28px; height: 26px; padding: 0; border: none; border-radius: 4px; cursor: pointer;">
+                    <input type="text" id="inspectorBgFillColorHex" class="form-input" style="flex: 1; padding: 1px 4px; font-size: 0.7rem;" placeholder="glass">
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- SUB-ELEMENT X, Y, Z MOVE & EDIT CONTROLS CONTAINER (NEW USER REQUIREMENT) -->
+            <div id="inspectorSubElementControlsContainer" class="inspector-card" style="display: none; margin-bottom: 12px; background: rgba(204, 255, 0, 0.04); border: 1px dashed rgba(204, 255, 0, 0.35); border-radius: 8px; padding: 10px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <span id="inspectorSubElementTitle" style="font-size: 0.75rem; font-weight: 700; color: var(--accent-volt);">📍 Sub-Element Position & Layer</span>
+                <div style="display: flex; gap: 4px;">
+                  <button type="button" id="inspectorDeleteSubElemBtn" class="btn btn-secondary" style="padding: 1px 6px; font-size: 0.7rem; color: #f87171;" title="Delete or hide this specific text/sub-element">🗑 Delete / Hide</button>
+                  <button type="button" id="inspectorResetSubElemBtn" class="btn btn-secondary" style="padding: 1px 6px; font-size: 0.7rem;">↺ Reset Pos</button>
+                </div>
+              </div>
+              <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 8px;">
+                Move X, Y, and adjust 3D layer depth (Z-Index) of this specific element.
+              </div>
+
+              <!-- Move X (dx) Slider & Input -->
+              <div class="form-group" style="margin-bottom: 6px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                  <label class="form-label" style="margin-bottom: 0; font-size: 0.72rem;">Move X (Horizontal Offset):</label>
+                  <div style="display: flex; align-items: center; gap: 2px;">
+                    <input type="number" id="inspectorSubElemXInput" class="form-input" min="-300" max="300" step="1" value="0" style="width: 60px; padding: 1px 4px; font-size: 0.72rem; text-align: right;">
+                    <span style="font-size: 0.7rem; color: var(--text-muted);">px</span>
+                  </div>
+                </div>
+                <input type="range" id="inspectorSubElemXSlider" class="form-slider" min="-200" max="200" step="1" value="0">
+              </div>
+
+              <!-- Move Y (dy) Slider & Input -->
+              <div class="form-group" style="margin-bottom: 6px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                  <label class="form-label" style="margin-bottom: 0; font-size: 0.72rem;">Move Y (Vertical Offset):</label>
+                  <div style="display: flex; align-items: center; gap: 2px;">
+                    <input type="number" id="inspectorSubElemYInput" class="form-input" min="-300" max="300" step="1" value="0" style="width: 60px; padding: 1px 4px; font-size: 0.72rem; text-align: right;">
+                    <span style="font-size: 0.7rem; color: var(--text-muted);">px</span>
+                  </div>
+                </div>
+                <input type="range" id="inspectorSubElemYSlider" class="form-slider" min="-200" max="200" step="1" value="0">
+              </div>
+
+              <!-- Layer Depth / Z-Index Slider & Input -->
+              <div class="form-group" style="margin-bottom: 6px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                  <label class="form-label" style="margin-bottom: 0; font-size: 0.72rem;">Layer Depth / Z-Index (Shadow & Blur):</label>
+                  <div style="display: flex; align-items: center; gap: 2px;">
+                    <input type="number" id="inspectorSubElemZInput" class="form-input" min="-5" max="10" step="0.5" value="1" style="width: 60px; padding: 1px 4px; font-size: 0.72rem; text-align: right;">
+                    <span style="font-size: 0.7rem; color: var(--text-muted);">z</span>
+                  </div>
+                </div>
+                <input type="range" id="inspectorSubElemZSlider" class="form-slider" min="-2" max="8" step="0.5" value="1">
+              </div>
+
+              <!-- Font Family Override for this Sub-Element -->
+              <div class="form-group" style="margin-bottom: 6px;">
+                <label class="form-label" style="font-size: 0.72rem;">Font Family for this Item:</label>
+                <select id="inspectorSubElemFontFamily" class="form-select" style="padding: 2px 6px; font-size: 0.75rem;">
+                  <option value="default">Inherit Widget Font</option>
+                  <option value="athletic">Athletic Bold (Anton, Impact)</option>
+                  <option value="bebas">Bebas Neue (Condensed Athletic)</option>
+                  <option value="oswald">Oswald (Punchy Headline)</option>
+                  <option value="montserrat">Montserrat (Modern Geometric)</option>
+                  <option value="barlow">Barlow Condensed (Technical Clean)</option>
+                  <option value="modern">Modern Sans (Inter, Clean)</option>
+                  <option value="tech">Rajdhani Tech (Cyber HUD)</option>
+                  <option value="mono">JetBrains Mono (Monospace)</option>
+                  <option value="serif">Playfair Display (Editorial Serif)</option>
+                  <option value="script">Caveat (Signature Script)</option>
+                </select>
+              </div>
+
+              <!-- Size Scale Slider & Input for this Sub-Element -->
+              <div class="form-group" style="margin-bottom: 6px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                  <label class="form-label" style="margin-bottom: 0; font-size: 0.72rem;">Item Size Scale:</label>
+                  <div style="display: flex; align-items: center; gap: 2px;">
+                    <input type="number" id="inspectorSubElemSizeInput" class="form-input" min="20" max="400" step="5" value="100" style="width: 56px; padding: 1px 4px; font-size: 0.72rem; text-align: right; font-weight: 700; color: var(--accent-volt);">
+                    <span style="font-size: 0.7rem; color: var(--text-muted); font-weight: 700;">%</span>
+                  </div>
+                </div>
+                <input type="range" id="inspectorSubElemSizeSlider" class="form-slider" min="30" max="300" step="5" value="100">
+                <div style="display: flex; justify-content: space-between; font-size: 0.65rem; color: var(--text-muted); margin-top: 1px;">
+                  <span>30%</span>
+                  <span id="inspectorSubElemSizeVal" style="color: var(--accent-volt); font-weight: 600;">100%</span>
+                  <span>300%</span>
+                </div>
+              </div>
+
+              <!-- Text Color Override for this Sub-Element -->
+              <div class="form-group" style="margin-bottom: 6px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                  <label class="form-label" style="margin-bottom: 0; font-size: 0.72rem;">Text Color for this Item:</label>
+                  <button type="button" id="inspectorSubElemColorResetBtn" class="btn btn-secondary" style="padding: 1px 5px; font-size: 0.68rem;" title="Reset to inherit widget/theme color">Inherit Color</button>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                  <input type="color" id="inspectorSubElemColorInput" class="form-color-picker" value="#ffffff" style="width: 36px; height: 28px; padding: 2px;">
+                  <input type="text" id="inspectorSubElemColorHex" class="form-input" placeholder="Inherited (Default)" style="flex: 1; font-family: monospace; font-size: 0.75rem; text-transform: uppercase;">
+                </div>
+              </div>
+
+              <!-- Direct Text Edit Input for this sub-element -->
+              <div class="form-group" id="inspectorSubElemTextGroup" style="margin-bottom: 4px;">
+                <label class="form-label" style="font-size: 0.72rem;">Edit Text for this Item:</label>
+                <input type="text" id="inspectorSubElemTextInput" class="form-input" placeholder="Custom text override...">
+              </div>
+            </div>
+
+            <!-- Font Family Override -->
+            <div class="form-group">
+              <label class="form-label">Font Family Override:</label>
+              <select id="inspectorFontFamily" class="form-select">
+                <option value="default">Inherit Global Font</option>
+                <option value="athletic">Athletic Bold (Anton, Impact)</option>
+                <option value="bebas">Bebas Neue (Condensed Athletic)</option>
+                <option value="oswald">Oswald (Punchy Headline)</option>
+                <option value="montserrat">Montserrat (Modern Geometric)</option>
+                <option value="barlow">Barlow Condensed (Technical Clean)</option>
+                <option value="modern">Modern Sans (Inter, Clean)</option>
+                <option value="tech">Rajdhani Tech (Cyber HUD)</option>
+                <option value="mono">JetBrains Mono (Monospace)</option>
+                <option value="serif">Playfair Display (Editorial Serif)</option>
+                <option value="script">Caveat (Signature Script)</option>
+              </select>
+            </div>
+
+            <!-- Font Size Scaling Slider & Manual Input -->
+            <div class="form-group">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <label class="form-label" style="margin-bottom: 0;">Font Size Scale:</label>
+                <div style="display: flex; align-items: center; gap: 4px;">
+                  <input type="number" id="inspectorFontSizeInput" class="form-input" min="20" max="400" step="1" value="100" style="width: 72px; padding: 2px 6px; font-size: 0.82rem; text-align: right; font-weight: 700; color: var(--accent-volt); background: rgba(0,0,0,0.5); border: 1px solid var(--border-color); border-radius: 6px;">
+                  <span style="font-size: 0.8rem; font-weight: 700; color: var(--accent-volt);">%</span>
+                </div>
+              </div>
+              <input type="range" id="inspectorFontSizeSlider" class="form-slider" min="30" max="300" step="1" value="100">
+              <div style="display: flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-muted); margin-top: 2px;">
+                <span>30%</span>
+                <span id="inspectorFontSizeVal" style="color: var(--accent-volt); font-weight: 600;">100%</span>
+                <span>300%</span>
+              </div>
+            </div>
+
+            <!-- Primary Text Color -->
+            <div class="form-group">
+              <label class="form-label">Text / Main Color:</label>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <input type="color" id="inspectorColorInput" value="#ffffff" style="width: 44px; height: 34px; padding: 0; border: none; border-radius: 6px; cursor: pointer; background: transparent;">
+                <input type="text" id="inspectorColorHex" class="form-input" style="flex: 1;" placeholder="#ffffff (or empty for default)">
+              </div>
+              <!-- Quick Palette Swatches -->
+              <div class="color-swatches" style="display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap;">
+                <button type="button" class="inspector-color-pill" data-target="color" data-color="#ffffff" style="background:#ffffff; width:22px; height:22px; border-radius:50%; border:1px solid #666;"></button>
+                <button type="button" class="inspector-color-pill" data-target="color" data-color="#ccff00" style="background:#ccff00; width:22px; height:22px; border-radius:50%; border:none;"></button>
+                <button type="button" class="inspector-color-pill" data-target="color" data-color="#00f0ff" style="background:#00f0ff; width:22px; height:22px; border-radius:50%; border:none;"></button>
+                <button type="button" class="inspector-color-pill" data-target="color" data-color="#ff3366" style="background:#ff3366; width:22px; height:22px; border-radius:50%; border:none;"></button>
+                <button type="button" class="inspector-color-pill" data-target="color" data-color="#fbbf24" style="background:#fbbf24; width:22px; height:22px; border-radius:50%; border:none;"></button>
+                <button type="button" class="inspector-color-pill" data-target="color" data-color="#fc5200" style="background:#fc5200; width:22px; height:22px; border-radius:50%; border:none;"></button>
+                <button type="button" class="inspector-color-pill" data-target="color" data-color="#10b981" style="background:#10b981; width:22px; height:22px; border-radius:50%; border:none;"></button>
+                <button type="button" class="inspector-color-pill" data-target="color" data-color="#0a0a0d" style="background:#0a0a0d; width:22px; height:22px; border-radius:50%; border:1px solid #555;"></button>
+              </div>
+            </div>
+
+            <!-- Accent / Highlight Color -->
+            <div class="form-group">
+              <label class="form-label">Accent / Highlight Color:</label>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <input type="color" id="inspectorAccentInput" value="#ccff00" style="width: 44px; height: 34px; padding: 0; border: none; border-radius: 6px; cursor: pointer; background: transparent;">
+                <input type="text" id="inspectorAccentHex" class="form-input" style="flex: 1;" placeholder="#ccff00 (or empty for default)">
+              </div>
+              <div class="color-swatches" style="display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap;">
+                <button type="button" class="inspector-color-pill" data-target="accent" data-color="#ccff00" style="background:#ccff00; width:22px; height:22px; border-radius:50%; border:none;"></button>
+                <button type="button" class="inspector-color-pill" data-target="accent" data-color="#00f0ff" style="background:#00f0ff; width:22px; height:22px; border-radius:50%; border:none;"></button>
+                <button type="button" class="inspector-color-pill" data-target="accent" data-color="#ff3366" style="background:#ff3366; width:22px; height:22px; border-radius:50%; border:none;"></button>
+                <button type="button" class="inspector-color-pill" data-target="accent" data-color="#fbbf24" style="background:#fbbf24; width:22px; height:22px; border-radius:50%; border:none;"></button>
+                <button type="button" class="inspector-color-pill" data-target="accent" data-color="#fc5200" style="background:#fc5200; width:22px; height:22px; border-radius:50%; border:none;"></button>
+                <button type="button" class="inspector-color-pill" data-target="accent" data-color="#10b981" style="background:#10b981; width:22px; height:22px; border-radius:50%; border:none;"></button>
+                <button type="button" class="inspector-color-pill" data-target="accent" data-color="#ffffff" style="background:#ffffff; width:22px; height:22px; border-radius:50%; border:1px solid #666;"></button>
+              </div>
+            </div>
+
+            <!-- Alignment Buttons -->
+            <div class="form-group">
+              <label class="form-label">Text Alignment:</label>
+              <div class="grid-4" id="inspectorAlignGrid">
+                <button type="button" class="btn btn-secondary active" data-align="default" style="padding: 6px 0; font-size: 0.75rem;">Default</button>
+                <button type="button" class="btn btn-secondary" data-align="left" style="padding: 6px 0; font-size: 0.75rem;">⬅️ Left</button>
+                <button type="button" class="btn btn-secondary" data-align="center" style="padding: 6px 0; font-size: 0.75rem;">↔️ Center</button>
+                <button type="button" class="btn btn-secondary" data-align="right" style="padding: 6px 0; font-size: 0.75rem;">➡️ Right</button>
+              </div>
+            </div>
+
+            <!-- Background Card Style -->
+            <div class="form-group">
+              <label class="form-label">Background Card Style:</label>
+              <select id="inspectorCardStyle" class="form-select">
+                <option value="default">Inherit Global Card Style</option>
+                <option value="text-only">📝 Text Only (No Border & No Background)</option>
+                <option value="glass">Glass Translucent</option>
+                <option value="solid">Solid Dark Background</option>
+                <option value="outline">Outlined Border Only</option>
+                <option value="floating">Floating / Transparent (No Box)</option>
+              </select>
+            </div>
+
+            <!-- Opacity Slider -->
+            <div class="form-group">
+              <label class="form-label">Element Opacity: <span id="inspectorOpacityVal" style="color:var(--accent-volt); font-weight:700;">100%</span></label>
+              <input type="range" id="inspectorOpacitySlider" class="form-slider" min="20" max="100" step="5" value="100">
+            </div>
+
+            <!-- Individual Text & Label Customizer for Current Element -->
+            <div class="form-group" id="inspectorTextEditorGroup" style="margin-top: 10px; border-top: 1px solid var(--border-subtle); padding-top: 10px;">
+              <label class="form-label" style="display: flex; justify-content: space-between; align-items: center;">
+                <span>Edit Text for This Element:</span>
+                <span id="inspectorTextWidgetBadge" style="font-size: 0.7rem; color: var(--accent-volt); font-weight: 700;">Header</span>
+              </label>
+              <div id="inspectorTextEditorContainer" class="inspector-text-grid">
+                <!-- Populated dynamically based on selected element -->
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 8px; margin-top: 10px;">
+              <button id="inspectorResetAllBtn" class="btn btn-secondary" style="flex: 1; font-size: 0.75rem;">↺ Reset All Elements</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 5: TEXT & STICKERS (NEW USER REQUIREMENT) -->
+        <div class="tab-pane" id="textTab">
+          <!-- 1. Custom Text Stickers Section -->
+          <div class="section">
+            <div class="section-title">
+              <span>Custom Text Stickers</span>
+              <button id="addCustomTextBtn" class="btn btn-primary" style="padding: 4px 12px; font-size: 0.75rem;">+ Add Custom Text</button>
+            </div>
+            <div class="sticker-presets">
+              <span style="font-size: 0.75rem; color: var(--text-muted); width: 100%; margin-bottom: 2px;">Quick Presets:</span>
+              <button class="sticker-preset-btn" data-preset="pb">🏆 Personal Best!</button>
+              <button class="sticker-preset-btn" data-preset="longrun">☀️ Sunday Long Run</button>
+              <button class="sticker-preset-btn" data-preset="tempo">🔥 Tempo Workout</button>
+              <button class="sticker-preset-btn" data-preset="intervals">⚡ 400m Repeats</button>
+              <button class="sticker-preset-btn" data-preset="marathon">🏅 Marathon Prep</button>
+              <button class="sticker-preset-btn" data-preset="trail">⛰️ Trail Day</button>
+              <button class="sticker-preset-btn" data-preset="quote">💬 Never Stop</button>
+            </div>
+            <div id="customTextsList" style="display: flex; flex-direction: column; gap: 8px;">
+              <!-- Populated dynamically by JS -->
+            </div>
+          </div>
+
+          <!-- 2. Header Layout Templates (Multiple Designs) -->
+          <div class="section">
+            <div class="section-title">
+              <span>Main Header Layout Templates</span>
+              <span style="font-size: 0.7rem; color: var(--accent-volt); font-weight: 600;">17 Designs</span>
+            </div>
+            <div style="font-size: 0.72rem; color: var(--text-muted); margin-bottom: 8px;">
+              Choose different layouts and typography arrangements for your Title, Subtitle, Date & Time:
+            </div>
+            <div class="grid-2" id="headerTemplateGrid">
+              <div class="choice-card active" data-template="modern">
+                <div class="choice-card-icon">⚡</div>
+                <div class="choice-card-label">Modern Clean</div>
+                <div style="font-size: 0.68rem; color: var(--text-muted);">Left title, date & runner</div>
+              </div>
+              <div class="choice-card" data-template="centered-hero">
+                <div class="choice-card-icon">👑</div>
+                <div class="choice-card-label">Centered Hero</div>
+                <div style="font-size: 0.68rem; color: var(--text-muted);">Bold center title + date pill</div>
+              </div>
+              <div class="choice-card" data-template="stacked-editorial">
+                <div class="choice-card-icon">📰</div>
+                <div class="choice-card-label">Stacked Editorial</div>
+                <div style="font-size: 0.68rem; color: var(--text-muted);">Date kicker + accent divider</div>
+              </div>
+              <div class="choice-card" data-template="split-banner">
+                <div class="choice-card-icon">📅</div>
+                <div class="choice-card-label">Calendar Banner</div>
+                <div style="font-size: 0.68rem; color: var(--text-muted);">Title + tear-off calendar box</div>
+              </div>
+              <div class="choice-card" data-template="retro-cyber">
+                <div class="choice-card-icon">👾</div>
+                <div class="choice-card-label">Retro Cyber HUD</div>
+                <div style="font-size: 0.68rem; color: var(--text-muted);">Tech frame, crosshairs & brackets</div>
+              </div>
+              <div class="choice-card" data-template="badge-shield">
+                <div class="choice-card-icon">🛡️</div>
+                <div class="choice-card-label">Collegiate Shield</div>
+                <div style="font-size: 0.68rem; color: var(--text-muted);">Crest, stars & athletic ribbon</div>
+              </div>
+              <div class="choice-card" data-template="minimal-topbar">
+                <div class="choice-card-icon">➖</div>
+                <div class="choice-card-label">Minimal Top Bar</div>
+                <div style="font-size: 0.68rem; color: var(--text-muted);">Sleek floating capsule pill</div>
+              </div>
+              <div class="choice-card" data-template="magazine-cover">
+                <div class="choice-card-icon">🗞️</div>
+                <div class="choice-card-label">Magazine Cover</div>
+                <div style="font-size: 0.68rem; color: var(--text-muted);">Bold uppercase masthead style</div>
+              </div>
+              <div class="choice-card" data-template="athletic">
+                <div class="choice-card-icon">🏃</div>
+                <div class="choice-card-label">Sport Athletic HUD</div>
+                <div style="font-size: 0.68rem; color: var(--text-muted);">Category chip badge & runner tag</div>
+              </div>
+              <div class="choice-card" data-template="pill">
+                <div class="choice-card-icon">💊</div>
+                <div class="choice-card-label">Glass Banner Pill</div>
+                <div style="font-size: 0.68rem; color: var(--text-muted);">Rounded glass banner with icon</div>
+              </div>
+              <div class="choice-card" data-template="minimalist-stamp">
+                <div class="choice-card-icon">🏷️</div>
+                <div class="choice-card-label">Passport Stamp</div>
+                <div style="font-size: 0.68rem; color: var(--text-muted);">Border seal & date badge</div>
+              </div>
+              <div class="choice-card" data-template="hud-flight">
+                <div class="choice-card-icon">🛩️</div>
+                <div class="choice-card-label">Flight HUD</div>
+                <div style="font-size: 0.68rem; color: var(--text-muted);">Instrument crosshairs & telemetry</div>
+              </div>
+              <div class="choice-card" data-template="race-ticker">
+                <div class="choice-card-icon">🏁</div>
+                <div class="choice-card-label">Racing Ticker</div>
+                <div style="font-size: 0.68rem; color: var(--text-muted);">Neon tape banner with dots</div>
+              </div>
+              <div class="choice-card" data-template="vertical-sidebar-badge">
+                <div class="choice-card-icon">▍</div>
+                <div class="choice-card-label">Vertical Accent Card</div>
+                <div style="font-size: 0.68rem; color: var(--text-muted);">Stacked headline & vertical stripe</div>
+              </div>
+              <div class="choice-card" data-template="running-bib-header">
+                <div class="choice-card-icon">🎽</div>
+                <div class="choice-card-label">Marathon Race Bib</div>
+                <div style="font-size: 0.68rem; color: var(--text-muted);">Bib number, athlete tag & seal</div>
+              </div>
+              <div class="choice-card" data-template="broadcast-lowerthird">
+                <div class="choice-card-icon">📺</div>
+                <div class="choice-card-label">Broadcast Banner</div>
+                <div style="font-size: 0.68rem; color: var(--text-muted);">Lower-third TV ribbon with live dot</div>
+              </div>
+              <div class="choice-card" data-template="architect-monolith">
+                <div class="choice-card-icon">🏛️</div>
+                <div class="choice-card-label">Architectural Monolith</div>
+                <div style="font-size: 0.68rem; color: var(--text-muted);">Oversized date & clean typography</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. Overlay Labels & Details Editor -->
+          <div class="section">
+            <div class="section-title">Edit Overlay Labels & Details</div>
+            <div class="form-group">
+              <label class="form-label">Activity Main Title</label>
+              <input type="text" id="textTabActivityTitle" class="form-input" placeholder="e.g. MORNING RUN">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Subtitle / Date & Time</label>
+              <input type="text" id="textTabSubtitle" class="form-input" placeholder="e.g. Sunday, 15 Oct • 06:30 AM">
+            </div>
+            <div class="grid-2">
+              <div class="form-group">
+                <label class="form-label">Runner Handle</label>
+                <input type="text" id="textTabRunnerName" class="form-input" placeholder="@runner_alex">
+              </div>
+              <div class="form-group">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                  <label class="form-label" style="margin-bottom: 0;">Location</label>
+                  <label style="font-size: 0.72rem; color: var(--text-muted); display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                    <input type="checkbox" id="textTabToggleHeaderLocation" checked> Show in Header
+                  </label>
+                </div>
+                <input type="text" id="textTabLocationName" class="form-input" placeholder="Central Park, NY">
+              </div>
+            </div>
+            <div class="grid-2">
+              <div class="form-group">
+                <label class="form-label">Weather Badge</label>
+                <input type="text" id="textTabWeatherText" class="form-input" placeholder="18°C ☀️ Sunny">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Custom Watermark / Brand</label>
+                <input type="text" id="textTabWatermark" class="form-input" placeholder="e.g. NIKE RUN CLUB">
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. Metric Labels Overrides (Multi-language) -->
+          <div class="section">
+            <div class="section-title">Customize Metric Labels (Multi-Language)</div>
+            <div class="grid-2">
+              <div class="form-group">
+                <label class="form-label">Distance Label</label>
+                <input type="text" id="customLabelDistance" class="form-input" placeholder="DISTANCE (e.g. JARAK)">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Moving Time Label</label>
+                <input type="text" id="customLabelTime" class="form-input" placeholder="TIME (e.g. WAKTU)">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Avg Pace Label</label>
+                <input type="text" id="customLabelPace" class="form-input" placeholder="AVG PACE (e.g. KECEPATAN)">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Best Pace Label</label>
+                <input type="text" id="customLabelBestPace" class="form-input" placeholder="BEST PACE">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Heart Rate Label</label>
+                <input type="text" id="customLabelHr" class="form-input" placeholder="AVG HR (e.g. DETAK JANTUNG)">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Elevation Label</label>
+                <input type="text" id="customLabelElevation" class="form-input" placeholder="ELEV GAIN (e.g. ELEVASI)">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Cadence Label</label>
+                <input type="text" id="customLabelCadence" class="form-input" placeholder="CADENCE (e.g. KADENSI)">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Calories Label</label>
+                <input type="text" id="customLabelCalories" class="form-input" placeholder="CALORIES (e.g. KALORI)">
+              </div>
+            </div>
+          </div>
+
+          <!-- 4. Universal Widget Text & Headers Editor -->
+          <div class="section">
+            <div class="section-title">Universal Widget Text Customization</div>
+            <div style="font-size: 0.72rem; color: var(--text-muted); margin-bottom: 8px;">
+              Override titles, labels, units, and custom text values for any widget on the overlay:
+            </div>
+
+            <!-- Hero Metric Override -->
+            <div class="form-group">
+              <label class="form-label" style="font-weight: 700; color: var(--accent-volt);">🏆 Hero Metric Text</label>
+              <div class="grid-3">
+                <input type="text" id="textTabHeroLabel" class="form-input" placeholder="Label (e.g. DISTANCE)">
+                <input type="text" id="textTabHeroValue" class="form-input" placeholder="Value (e.g. 10.50)">
+                <input type="text" id="textTabHeroUnit" class="form-input" placeholder="Unit (e.g. KM)">
+              </div>
+            </div>
+
+            <!-- Chart & Graph Titles Override -->
+            <div class="form-group">
+              <label class="form-label" style="font-weight: 700; color: var(--accent-volt);">📈 Charts & Graphs Titles</label>
+              <div class="grid-3">
+                <input type="text" id="textTabPaceGraphTitle" class="form-input" placeholder="Pace Graph Title">
+                <input type="text" id="textTabHrGraphTitle" class="form-input" placeholder="HR Graph Title">
+                <input type="text" id="textTabElevationTitle" class="form-input" placeholder="Elevation Title">
+              </div>
+            </div>
+
+            <!-- HR Badge & Brand Override -->
+            <div class="form-group">
+              <label class="form-label" style="font-weight: 700; color: var(--accent-volt);">❤️ HR Badge & Watermark Text</label>
+              <div class="grid-3">
+                <input type="text" id="textTabHrBadgeLabel" class="form-input" placeholder="HR Badge Label">
+                <input type="text" id="textTabHrBadgeUnit" class="form-input" placeholder="HR Badge Unit (BPM)">
+                <input type="text" id="textTabBrandWatermarkText" class="form-input" placeholder="Custom Brand Text">
+              </div>
+            </div>
+
+            <!-- Split Table Column Headers Override -->
+            <div class="form-group">
+              <label class="form-label" style="font-weight: 700; color: var(--accent-volt);">⚡ Split Table Headers</label>
+              <div class="grid-4" style="grid-template-columns: repeat(4, 1fr); gap: 6px;">
+                <input type="text" id="textTabSplitHeaderSplit" class="form-input" placeholder="SPLIT">
+                <input type="text" id="textTabSplitHeaderTime" class="form-input" placeholder="TIME">
+                <input type="text" id="textTabSplitHeaderPace" class="form-input" placeholder="PACE">
+                <input type="text" id="textTabSplitHeaderDelta" class="form-input" placeholder="+/-">
+                <input type="text" id="textTabSplitHeaderHr" class="form-input" placeholder="AVG HR">
+                <input type="text" id="textTabSplitHeaderMaxHr" class="form-input" placeholder="MAX HR">
+                <input type="text" id="textTabSplitHeaderCad" class="form-input" placeholder="CAD">
+                <input type="text" id="textTabSplitHeaderElev" class="form-input" placeholder="ELEV">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 6: STYLE & BACKGROUND -->
+        <div class="tab-pane" id="styleTab">
+          <div class="section">
+            <div class="section-title">Background Type</div>
+            <div class="grid-4" id="bgTypeGrid">
+              <div class="choice-card active" data-bg="solid">
+                <div class="choice-card-icon">⬛</div>
+                <div class="choice-card-label">Solid</div>
+              </div>
+              <div class="choice-card" data-bg="photo">
+                <div class="choice-card-icon">🖼️</div>
+                <div class="choice-card-label">Photo</div>
+              </div>
+              <div class="choice-card" data-bg="gradient">
+                <div class="choice-card-icon">🌈</div>
+                <div class="choice-card-label">Gradient</div>
+              </div>
+              <div class="choice-card" data-bg="transparent">
+                <div class="choice-card-icon">🏁</div>
+                <div class="choice-card-label">Sticker</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Photo Controls Section (Shown when Photo is chosen) -->
+          <div class="section" id="photoControlsSection" style="display: none;">
+            <div class="section-title" style="display: flex; justify-content: space-between; align-items: center;">
+              <span>Background Photo Adjustments</span>
+              <span id="photoRatioStatusBadge" style="font-size: 0.7rem; color: var(--accent-volt); font-weight: 600;">No Crop Mode</span>
+            </div>
+            
+            <div class="form-group">
+              <label class="form-label">Choose Run Photo</label>
+              <input type="file" id="bgPhotoInput" class="form-input" accept="image/*">
+            </div>
+
+            <!-- Ratio & Fit Mode -->
+            <div class="form-group">
+              <label class="form-label" style="display: flex; justify-content: space-between; align-items: center;">
+                <span>Photo Sizing & Ratio Fit:</span>
+                <span id="photoFitBadge" style="font-size: 0.7rem; color: var(--accent-volt); font-weight: 700;">100% Uncropped</span>
+              </label>
+              <div class="grid-2" id="photoFitGrid">
+                <button type="button" class="btn btn-secondary active" id="photoFitBtn" data-fit="fit" style="font-size: 0.78rem; padding: 7px 4px;">
+                  🖼️ Fit (No Crop / Full)
+                </button>
+                <button type="button" class="btn btn-secondary" id="photoCoverBtn" data-fit="cover" style="font-size: 0.78rem; padding: 7px 4px;">
+                  🔲 Fill Frame (Cover)
+                </button>
+              </div>
+              <div style="font-size: 0.71rem; color: var(--text-muted); margin-top: 4px; line-height: 1.3;">
+                Fit displays the full photo without cropping unseen edges when the photo ratio differs from the workspace format.
+              </div>
+            </div>
+
+            <!-- Unseen Area Margin Backdrop -->
+            <div class="form-group" id="photoBackdropGroup">
+              <label class="form-label">Margin Backdrop Style (for non-matching ratios):</label>
+              <select id="photoBackdropSelect" class="form-select">
+                <option value="blur">✨ Ambient Blurred Photo (Modern)</option>
+                <option value="solid">🎨 Solid Canvas Color</option>
+                <option value="black">⬛ Black Letterbox</option>
+                <option value="transparent">🏁 Transparent</option>
+              </select>
+            </div>
+
+            <!-- Move Photo X & Y Axis (Unrestricted) -->
+            <div class="form-group" style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 10px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <span style="font-weight: 600; font-size: 0.8rem; color: var(--text-primary);">Move Photo (X / Y Axes)</span>
+                <span style="font-size: 0.68rem; color: var(--accent-volt); font-weight: 600;">Drag canvas directly to move</span>
+              </div>
+
+              <!-- Pan X -->
+              <div style="margin-bottom: 8px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                  <label class="form-label" style="margin: 0; font-size: 0.74rem;">Pan X (<span id="photoPanXVal">0%</span>):</label>
+                  <div style="display: flex; align-items: center; gap: 4px;">
+                    <input type="number" id="photoPanXInput" class="form-input" style="width: 58px; height: 24px; padding: 2px 4px; font-size: 0.74rem; text-align: right; color: var(--accent-volt); font-weight: 700;" value="0" step="1">
+                    <span style="font-size: 0.74rem; color: var(--text-muted); font-weight: 600;">%</span>
+                  </div>
+                </div>
+                <input type="range" id="photoPanX" class="form-slider" min="-150" max="150" step="1" value="0">
+              </div>
+
+              <!-- Pan Y -->
+              <div style="margin-bottom: 8px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                  <label class="form-label" style="margin: 0; font-size: 0.74rem;">Pan Y (<span id="photoPanYVal">0%</span>):</label>
+                  <div style="display: flex; align-items: center; gap: 4px;">
+                    <input type="number" id="photoPanYInput" class="form-input" style="width: 58px; height: 24px; padding: 2px 4px; font-size: 0.74rem; text-align: right; color: var(--accent-volt); font-weight: 700;" value="0" step="1">
+                    <span style="font-size: 0.74rem; color: var(--text-muted); font-weight: 600;">%</span>
+                  </div>
+                </div>
+                <input type="range" id="photoPanY" class="form-slider" min="-150" max="150" step="1" value="0">
+              </div>
+
+              <!-- Directional Nudge & Center Buttons -->
+              <div style="display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap;">
+                <button type="button" id="photoNudgeLeftBtn" class="btn btn-secondary" style="flex: 1; padding: 4px 6px; font-size: 0.73rem;" title="Nudge Left 5%">◀ Left</button>
+                <button type="button" id="photoNudgeRightBtn" class="btn btn-secondary" style="flex: 1; padding: 4px 6px; font-size: 0.73rem;" title="Nudge Right 5%">▶ Right</button>
+                <button type="button" id="photoNudgeUpBtn" class="btn btn-secondary" style="flex: 1; padding: 4px 6px; font-size: 0.73rem;" title="Nudge Up 5%">▲ Up</button>
+                <button type="button" id="photoNudgeDownBtn" class="btn btn-secondary" style="flex: 1; padding: 4px 6px; font-size: 0.73rem;" title="Nudge Down 5%">▼ Down</button>
+                <button type="button" id="photoCenterBtn" class="btn btn-secondary" style="flex: 1.2; padding: 4px 6px; font-size: 0.73rem;" title="Center Photo Horizontally & Vertically">⌖ Center</button>
+              </div>
+            </div>
+
+            <!-- Zoom & Blur -->
+            <div class="grid-2">
+              <div class="form-group">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                  <label class="form-label" style="margin: 0; font-size: 0.74rem;">Zoom (<span id="photoZoomVal">1x</span>):</label>
+                  <div style="display: flex; align-items: center; gap: 2px;">
+                    <input type="number" id="photoZoomInput" class="form-input" style="width: 52px; height: 22px; padding: 2px 4px; font-size: 0.74rem; text-align: right; color: var(--accent-volt); font-weight: 700;" value="1" step="0.05" min="0.1" max="10">
+                    <span style="font-size: 0.74rem; color: var(--text-muted);">x</span>
+                  </div>
+                </div>
+                <input type="range" id="photoZoom" class="form-slider" min="0.1" max="4.0" step="0.05" value="1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Blur (<span id="photoBlurVal">0px</span>)</label>
+                <input type="range" id="photoBlur" class="form-slider" min="0" max="25" step="1" value="0">
+              </div>
+            </div>
+
+            <!-- Brightness & Contrast -->
+            <div class="grid-2">
+              <div class="form-group">
+                <label class="form-label">Brightness (<span id="photoBrightnessVal">100%</span>)</label>
+                <input type="range" id="photoBrightness" class="form-slider" min="40" max="150" step="5" value="100">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Contrast (<span id="photoContrastVal">100%</span>)</label>
+                <input type="range" id="photoContrast" class="form-slider" min="50" max="150" step="5" value="100">
+              </div>
+            </div>
+
+            <!-- Protective Gradient Overlay -->
+            <div class="toggle-item" style="margin-top: 10px;">
+              <div class="toggle-label-group">
+                <div>
+                  <div class="toggle-text">Protective Gradient Overlay</div>
+                  <div class="toggle-desc">Top & bottom subtle dark fades for text legibility</div>
+                </div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="togglePhotoProtection" checked>
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Color Themes -->
+          <div class="section">
+            <div class="section-title">Color Themes</div>
+            <div class="grid-3" id="themeGrid">
+              <div class="choice-card active" data-theme="volt">
+                <div class="theme-swatch" style="background: #ccff00;"></div>
+                <div class="choice-card-label">Volt Lime</div>
+              </div>
+              <div class="choice-card" data-theme="cyan">
+                <div class="theme-swatch" style="background: #00f0ff;"></div>
+                <div class="choice-card-label">Tokyo Cyan</div>
+              </div>
+              <div class="choice-card" data-theme="coral">
+                <div class="theme-swatch" style="background: #ff3366;"></div>
+                <div class="choice-card-label">Hot Coral</div>
+              </div>
+              <div class="choice-card" data-theme="gold">
+                <div class="theme-swatch" style="background: #fbbf24;"></div>
+                <div class="choice-card-label">Champion Gold</div>
+              </div>
+              <div class="choice-card" data-theme="white">
+                <div class="theme-swatch" style="background: #ffffff;"></div>
+                <div class="choice-card-label">Minimal White</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Custom Color Picker -->
+          <div class="section">
+            <div class="section-title">Custom Accent Color</div>
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <input type="color" id="customColorInput" value="#ccff00" style="width: 50px; height: 40px; border-radius: 8px; border: none; cursor: pointer; background: transparent;">
+              <span style="font-size: 0.85rem; color: var(--text-muted);">Pick any custom brand or jersey color</span>
+            </div>
+          </div>
+
+          <!-- Card Style -->
+          <div class="section">
+            <div class="section-title">Card Styling</div>
+            <div class="grid-4" id="cardStyleGrid">
+              <div class="choice-card active" data-cardstyle="glass">
+                <div class="choice-card-label">Frosted Glass</div>
+              </div>
+              <div class="choice-card" data-cardstyle="solid">
+                <div class="choice-card-label">Solid Dark</div>
+              </div>
+              <div class="choice-card" data-cardstyle="minimal">
+                <div class="choice-card-label">Outlined Only</div>
+              </div>
+              <div class="choice-card" data-cardstyle="text-only">
+                <div class="choice-card-label">Text Only</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Typography -->
+          <div class="section">
+            <div class="section-title">Typography Style</div>
+            <div class="grid-3" id="fontGrid">
+              <div class="choice-card active" data-font="athletic">
+                <div class="choice-card-label" style="font-family: 'Anton', sans-serif;">ATHLETIC</div>
+              </div>
+              <div class="choice-card" data-font="modern">
+                <div class="choice-card-label" style="font-family: 'Inter', sans-serif;">MODERN</div>
+              </div>
+              <div class="choice-card" data-font="cyber">
+                <div class="choice-card-label" style="font-family: 'Rajdhani', sans-serif;">CYBER HUD</div>
+              </div>
+              <div class="choice-card" data-font="mono">
+                <div class="choice-card-label" style="font-family: 'JetBrains Mono', monospace;">MONO TECH</div>
+              </div>
+              <div class="choice-card" data-font="serif">
+                <div class="choice-card-label" style="font-family: 'Playfair Display', serif;">EDITORIAL</div>
+              </div>
+              <div class="choice-card" data-font="script">
+                <div class="choice-card-label" style="font-family: 'Caveat', cursive;">SCRIPT</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 7: EXPORT -->
+        <div class="tab-pane" id="exportTab">
+          <div class="section">
+            <div class="section-title">Export Resolution</div>
+            <div class="grid-3" id="exportScaleGrid">
+              <div class="choice-card" data-scale="1">
+                <div class="choice-card-label">1X Standard</div>
+                <div style="font-size: 0.7rem; color: var(--text-muted);">1080 x 1920</div>
+              </div>
+              <div class="choice-card active" data-scale="2">
+                <div class="choice-card-label">2X Ultra HD</div>
+                <div style="font-size: 0.7rem; color: var(--text-muted);">2160 x 3840 (Crisp)</div>
+              </div>
+              <div class="choice-card" data-scale="3">
+                <div class="choice-card-label">3X Super Res</div>
+                <div style="font-size: 0.7rem; color: var(--text-muted);">3240 x 5760 (Print)</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">Image Format</div>
+            <div class="grid-2" id="exportFormatGrid">
+              <div class="choice-card active" data-format="png">
+                <div class="choice-card-label">PNG</div>
+                <div style="font-size: 0.7rem; color: var(--text-muted);">Lossless & Transparent</div>
+              </div>
+              <div class="choice-card" data-format="jpeg">
+                <div class="choice-card-label">JPEG</div>
+                <div style="font-size: 0.7rem; color: var(--text-muted);">Compact file size</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="section" style="display: flex; flex-direction: column; gap: 10px;">
+
+            <button id="downloadBtn" class="btn btn-primary btn-accent-glow" style="padding: 14px;">
+              <span>⬇️ Download Image</span>
+            </button>
+            <button id="copyBtn" class="btn btn-secondary" style="padding: 14px;">
+              <span>📋 Copy Image to Clipboard</span>
+            </button>
+            <button id="shareBtn" class="btn btn-secondary" style="padding: 14px;">
+              <span>📲 Share to Socials / Stories</span>
+            </button>
+
+          </div>
+
+          <!-- ANIMATED VIDEO EXPORT SECTION -->
+          <div class="section" id="animatedVideoExportSection">
+            <div class="section-title" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <span>🎬 Animated Video Export</span>
+              <span style="font-size: 0.68rem; background: rgba(56, 189, 248, 0.15); color: #38bdf8; padding: 2px 8px; border-radius: 4px; font-weight: 700; border: 1px solid rgba(56, 189, 248, 0.3);">MP4 Video</span>
+            </div>
+            <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 12px; line-height: 1.4;">
+              Export full running progression as a smooth MP4 video with animated runner beacon on route, ticking pace & distance, and elevation scanning needle.
+            </p>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 12px;">
+              <div>
+                <label class="form-label" style="font-size: 0.72rem;">Run Duration</label>
+                <select id="videoExportDurationSelect" class="form-input" style="padding: 6px 10px; font-size: 0.8rem;">
+                  <option value="5">5s (Quick Reel)</option>
+                  <option value="10" selected>10s (Standard)</option>
+                  <option value="15">15s (IG / TikTok)</option>
+                  <option value="20">20s (Extended)</option>
+                  <option value="30">30s (Detailed)</option>
+                </select>
+              </div>
+              <div>
+                <label class="form-label" style="font-size: 0.72rem;">End Hold</label>
+                <select id="videoExportHoldSelect" class="form-input" style="padding: 6px 10px; font-size: 0.8rem;">
+                  <option value="0">0s (None)</option>
+                  <option value="3">3s</option>
+                  <option value="5" selected>5s (Default)</option>
+                  <option value="8">8s</option>
+                  <option value="10">10s</option>
+                </select>
+              </div>
+              <div>
+                <label class="form-label" style="font-size: 0.72rem;">Framerate</label>
+                <select id="videoExportFpsSelect" class="form-input" style="padding: 6px 10px; font-size: 0.8rem;">
+                  <option value="30" selected>30 FPS (Smooth)</option>
+                  <option value="60">60 FPS (Ultra Smooth)</option>
+                </select>
+              </div>
+            </div>
+
+            <button type="button" id="startVideoExportBtn" class="btn btn-primary" style="width: 100%; padding: 12px; font-weight: 700; background: linear-gradient(135deg, #0ea5e9, #6366f1); border: none; box-shadow: 0 4px 15px rgba(14, 165, 233, 0.35);">
+              <span>🎬 Render & Export Video (.mp4)</span>
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Mobile Sticky Bottom Bar -->
+      <div class="bottom-bar">
+        <button id="mobileShareBtn" class="btn btn-secondary">
+          <span>📲 Share</span>
+        </button>
+        <button id="mobileDownloadBtn" class="btn btn-primary btn-accent-glow">
+          <span>⬇️ Export Overlay</span>
+        </button>
+      </div>
+
+    </section>
+  </main>
+
+  <!-- VIDEO EXPORT MODAL -->
+  <div id="videoExportModal" class="video-modal-backdrop" style="display: none;">
+    <div class="video-modal-dialog">
+      <div class="video-modal-header">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 1.2rem;">🎬</span>
+          <span style="font-weight: 700; font-size: 1.05rem; color: #fff;">Export Run Animation Video</span>
+        </div>
+        <button type="button" id="closeVideoModalBtn" class="video-modal-close" title="Close">✕</button>
+      </div>
+
+      <div class="video-modal-body">
+        <!-- Settings (Shown before / when configuring) -->
+        <div id="videoSettingsView">
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 14px; line-height: 1.4;">
+            Create a high-resolution video showing your run from start to finish. Perfect for Instagram Stories, Reels, TikTok, and Strava.
+          </p>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;">
+            <div>
+              <label class="form-label">Run Progression Duration</label>
+              <select id="modalVideoDurationSelect" class="form-input">
+                <option value="5">5 seconds (Rapid)</option>
+                <option value="10" selected>10 seconds (Standard)</option>
+                <option value="15">15 seconds (Story / Reel)</option>
+                <option value="20">20 seconds (Extended)</option>
+                <option value="30">30 seconds (Full View)</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label">End Shot Preview Hold</label>
+              <select id="modalVideoHoldSelect" class="form-input">
+                <option value="0">0 seconds (No hold)</option>
+                <option value="3">3 seconds</option>
+                <option value="5" selected>5 seconds (Default)</option>
+                <option value="8">8 seconds</option>
+                <option value="10">10 seconds</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+            <div>
+              <label class="form-label">Resolution / Quality</label>
+              <select id="modalVideoScaleSelect" class="form-input">
+                <option value="1" selected>1X (1080p Fast)</option>
+                <option value="2">2X (4K Ultra HD Crisp)</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label">Framerate</label>
+              <select id="modalVideoFpsSelect" class="form-input">
+                <option value="30" selected>30 FPS (Recommended)</option>
+                <option value="60">60 FPS (Ultra Smooth)</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="margin-bottom: 16px;">
+            <label class="form-label">Format / Codec</label>
+            <select id="modalVideoCodecSelect" class="form-input">
+              <option value="auto" selected>Auto (Best Available - MP4)</option>
+              <option value="video/mp4;codecs=avc1">MP4 (H.264 / AVC1)</option>
+              <option value="video/webm;codecs=vp9">WebM (VP9)</option>
+            </select>
+          </div>
+
+          <button type="button" id="modalRenderVideoBtn" class="btn btn-primary" style="width: 100%; padding: 12px; font-weight: 700; background: linear-gradient(135deg, #0ea5e9, #6366f1); border: none; box-shadow: 0 4px 15px rgba(14, 165, 233, 0.35);">
+            <span>🚀 Start Rendering Video</span>
+          </button>
+        </div>
+
+        <!-- Rendering Progress View -->
+        <div id="videoProgressView" style="display: none; text-align: center; padding: 16px 0;">
+          <div style="font-size: 2rem; margin-bottom: 10px; animation: spin 2s linear infinite;">⚙️</div>
+          <div id="videoProgressStatusText" style="font-weight: 700; color: #fff; margin-bottom: 8px;">Rendering frames...</div>
+          <div style="background: rgba(255, 255, 255, 0.08); border-radius: 8px; height: 12px; width: 100%; overflow: hidden; margin-bottom: 8px;">
+            <div id="videoProgressBar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #0ea5e9, #10b981); transition: width 0.1s linear;"></div>
+          </div>
+          <div id="videoProgressDetail" style="font-size: 0.75rem; color: var(--text-muted);">Frame 0 / 300 (0%)</div>
+        </div>
+
+        <!-- Completed Video Preview View -->
+        <div id="videoCompletedView" style="display: none; text-align: center;">
+          <div style="margin-bottom: 12px; border-radius: 10px; overflow: hidden; background: #000; border: 1px solid var(--border-subtle); max-height: 280px; display: flex; justify-content: center; align-items: center;">
+            <video id="videoPreviewPlayer" controls autoplay loop playsinline style="max-height: 280px; max-width: 100%;"></video>
+          </div>
+          <div id="videoMetaText" style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 14px;">10.0s • MP4 • 1.4 MB</div>
+          <div style="display: flex; gap: 10px;">
+            <button type="button" id="modalDownloadVideoBtn" class="btn btn-primary" style="flex: 1; padding: 11px; font-weight: 700; background: #10b981; border: none; box-shadow: 0 4px 15px rgba(16, 185, 129, 0.35);">
+              <span>⬇️ Download Video (.mp4)</span>
+            </button>
+            <button type="button" id="modalRenderAgainBtn" class="btn btn-secondary" style="padding: 11px 16px;">
+              <span>↺ Options</span>
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Notification Toast -->
+  <div id="toast" class="toast">
+    <span>⚡</span>
+    <span id="toastMsg">Ready</span>
+  </div>
+
+  <!-- Hidden Canvas for full-resolution multi-scale exports -->
+  <canvas id="exportCanvas" style="display: none;"></canvas>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
