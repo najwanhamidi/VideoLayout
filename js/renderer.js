@@ -739,9 +739,11 @@ export class OverlayRenderer {
     // 6. Splits Widget (Bar chart or Spotlight Card)
     if (config.showWidgetSplits !== false) {
       if (config.splitWidgetMode === 'highlight') {
-        const pos = this.getWidgetPos(config, 'splitHighlight', pad, currY, w - pad * 2, 115);
-        const nextY = this.drawSplitHighlightCard(ctx, pos.x, pos.y, pos.width, activity, config, theme, accent, pos.height);
-        if (!pos.isCustom) currY = nextY + 16;
+        if (config.showWidgetSplitHighlight !== false) {
+          const pos = this.getWidgetPos(config, 'splitHighlight', pad, currY, w - pad * 2, 115);
+          const nextY = this.drawSplitHighlightCard(ctx, pos.x, pos.y, pos.width, activity, config, theme, accent, pos.height);
+          if (!pos.isCustom) currY = nextY + 16;
+        }
       } else {
         const pos = this.getWidgetPos(config, 'splits', pad, currY, w - pad * 2, 150);
         const nextY = this.drawSplitsBarChart(ctx, pos.x, pos.y, pos.width, activity, config, theme, accent, pos.height);
@@ -791,12 +793,16 @@ export class OverlayRenderer {
     currY = this.drawHeader(ctx, posH.x, posH.y, posH.width, activity, config, theme, accent, posH.height) + 16;
 
     // Split Spotlight Card
-    const posSp = this.getWidgetPos(config, 'splitHighlight', pad, currY, w - pad * 2, 115);
-    currY = this.drawSplitHighlightCard(ctx, posSp.x, posSp.y, posSp.width, activity, config, theme, accent, posSp.height) + 18;
+    if (config.showWidgetSplitHighlight !== false && config.showWidgetSplits !== false) {
+      const posSp = this.getWidgetPos(config, 'splitHighlight', pad, currY, w - pad * 2, 115);
+      currY = this.drawSplitHighlightCard(ctx, posSp.x, posSp.y, posSp.width, activity, config, theme, accent, posSp.height) + 18;
+    }
 
     // Full Splits Bar Chart
-    const posSb = this.getWidgetPos(config, 'splits', pad, currY, w - pad * 2, 175);
-    currY = this.drawSplitsBarChart(ctx, posSb.x, posSb.y, posSb.width, activity, config, theme, accent, posSb.height) + 18;
+    if (config.showWidgetSplits !== false) {
+      const posSb = this.getWidgetPos(config, 'splits', pad, currY, w - pad * 2, 175);
+      currY = this.drawSplitsBarChart(ctx, posSb.x, posSb.y, posSb.width, activity, config, theme, accent, posSb.height) + 18;
+    }
 
     // Pace or HR Graph
     if (config.showWidgetPaceGraph) {
@@ -946,12 +952,16 @@ export class OverlayRenderer {
     currY = this.drawHeader(ctx, posH.x, posH.y, posH.width, activity, config, theme, accent, posH.height) + 16;
 
     // Fastest / Spotlight Lap Card
-    const posSp = this.getWidgetPos(config, 'splitHighlight', pad, currY, w - pad * 2, 115);
-    currY = this.drawSplitHighlightCard(ctx, posSp.x, posSp.y, posSp.width, activity, config, theme, accent, posSp.height) + 16;
+    if (config.showWidgetSplitHighlight !== false && config.showWidgetSplits !== false) {
+      const posSp = this.getWidgetPos(config, 'splitHighlight', pad, currY, w - pad * 2, 115);
+      currY = this.drawSplitHighlightCard(ctx, posSp.x, posSp.y, posSp.width, activity, config, theme, accent, posSp.height) + 16;
+    }
 
     // High chart for all workout laps
-    const posS = this.getWidgetPos(config, 'splits', pad, currY, w - pad * 2, 220);
-    currY = this.drawSplitsBarChart(ctx, posS.x, posS.y, posS.width, activity, config, theme, accent, posS.height) + 16;
+    if (config.showWidgetSplits !== false) {
+      const posS = this.getWidgetPos(config, 'splits', pad, currY, w - pad * 2, 220);
+      currY = this.drawSplitsBarChart(ctx, posS.x, posS.y, posS.width, activity, config, theme, accent, posS.height) + 16;
+    }
 
     // Pace or HR Graph
     if (config.showWidgetPaceGraph && currY < h * 0.84) {
@@ -1034,8 +1044,10 @@ export class OverlayRenderer {
     currY = this.drawHeader(ctx, posH.x, posH.y, posH.width, activity, { ...config, headerTemplate: config.headerTemplate || 'badge-shield' }, theme, accent, posH.height) + 16;
 
     // 2. Spotlight Fastest Split / Trophy Card
-    const posSp = this.getWidgetPos(config, 'splitHighlight', pad, currY, w - pad * 2, 115);
-    currY = this.drawSplitHighlightCard(ctx, posSp.x, posSp.y, posSp.width, activity, { ...config, splitHighlightDesign: config.splitHighlightDesign || 'centered-trophy-card' }, theme, accent, posSp.height) + 16;
+    if (config.showWidgetSplitHighlight !== false && config.showWidgetSplits !== false) {
+      const posSp = this.getWidgetPos(config, 'splitHighlight', pad, currY, w - pad * 2, 115);
+      currY = this.drawSplitHighlightCard(ctx, posSp.x, posSp.y, posSp.width, activity, { ...config, splitHighlightDesign: config.splitHighlightDesign || 'centered-trophy-card' }, theme, accent, posSp.height) + 16;
+    }
 
     // 3. Hero Distance
     const posHero = this.getWidgetPos(config, 'hero', pad, currY, w - pad * 2, 105);
@@ -4896,6 +4908,10 @@ export class OverlayRenderer {
 
   // =========================================================================
   drawSplitsBarChart(ctx, x, y, width, activity, config, theme, accent, chartH = 150, widgetKey = 'splits') {
+    if (config && config.showWidgetSplits === false) return y;
+    const offWidget = this.getElementOffset(config, widgetKey, 'widget');
+    if (offWidget.hidden) return y;
+
     const isLapSource = config.splitDataSource === 'laps' && activity.hasLaps;
     const items = isLapSource ? activity.laps : activity.splits;
 
@@ -4938,7 +4954,7 @@ export class OverlayRenderer {
     }
 
     const fastest = isLapSource ? null : activity.fastestSplit;
-    const showFastest = config.splitsShowFastest !== false;
+    const showFastest = (config.splitHighlightFastest !== false) && (config.splitsShowFastest !== false);
 
     if (fastest && showFastest && !offBadge.hidden) {
       ctx.save();
@@ -5694,11 +5710,16 @@ export class OverlayRenderer {
 
   // =========================================================================
   drawSplitHighlightCard(ctx, x, y, width, activity, config, theme, accent, customH = null, widgetKey = 'splitHighlight') {
+    if (config && config.showWidgetSplitHighlight === false) return y;
+    const offWidget = this.getElementOffset(config, widgetKey, 'widget');
+    if (offWidget.hidden) return y;
+
     const isLapSource = config.splitDataSource === 'laps' && activity.hasLaps;
     const items = isLapSource ? activity.laps : activity.splits;
 
     if (!items || items.length === 0) return y;
 
+    const showFastest = (config.splitHighlightFastest !== false) && (config.splitsShowFastest !== false);
     let target = items[0];
     const targetKey = config.highlightSplitTarget || 'fastest';
 
@@ -5763,7 +5784,7 @@ export class OverlayRenderer {
         ctx.letterSpacing = '1px';
         const defaultTag = isTargetLive
           ? `LIVE INTERVAL • ${target.name.toUpperCase()}`
-          : (target.isFastest ? `FASTEST SPLIT // ${target.name.toUpperCase()}` : `SPOTLIGHT // ${target.name.toUpperCase()}`);
+          : ((target.isFastest && showFastest) ? `FASTEST SPLIT // ${target.name.toUpperCase()}` : `SPOTLIGHT // ${target.name.toUpperCase()}`);
         const tag = this.getTextOverride(config, widgetKey, 'badge', defaultTag);
         ctx.fillText(tag, cx + offBadge.x, y + 48 + offBadge.y);
         ctx.restore();
@@ -6098,7 +6119,7 @@ export class OverlayRenderer {
       ctx.letterSpacing = '1px';
       const defaultTag = isTargetLive
         ? `★ LIVE SPLIT • ${target.name.toUpperCase()} (${Math.round((target.splitProgress || 0) * 100)}%) ★`
-        : (target.isFastest ? '⚡ FASTEST SPLIT SPOTLIGHT' : 'HIGHLIGHTED SPLIT');
+        : ((target.isFastest && showFastest) ? '⚡ FASTEST SPLIT SPOTLIGHT' : 'HIGHLIGHTED SPLIT');
       const tag = this.getTextOverride(config, widgetKey, 'badge', defaultTag);
       ctx.fillText(tag, mainX + offBadge.x, (isCenter ? y + 26 : y + 30) + offBadge.y);
       ctx.restore();

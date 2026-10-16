@@ -43,6 +43,8 @@ const state = {
     showWidgetHero: true,
     showWidgetMetrics: true,
     showWidgetSplits: true,
+    showWidgetSplitHighlight: true,
+    splitsShowFastest: true,
     showWidgetElevation: false,
     showWidgetHrZones: false,
     showWidgetBrand: true,
@@ -309,6 +311,7 @@ function syncAllControlsWithConfig() {
     { id: 'toggleHero', key: 'showWidgetHero' },
     { id: 'toggleMetrics', key: 'showWidgetMetrics' },
     { id: 'toggleSplits', key: 'showWidgetSplits' },
+    { id: 'toggleSplitHighlight', key: 'showWidgetSplitHighlight' },
     { id: 'toggleElevation', key: 'showWidgetElevation' },
     { id: 'toggleHrZones', key: 'showWidgetHrZones' },
     { id: 'toggleBrand', key: 'showWidgetBrand' },
@@ -332,7 +335,7 @@ function syncAllControlsWithConfig() {
 
   // 7. Splits Tab Checkboxes
   const splitHighlightFastest = document.getElementById('toggleFastestSplitHighlight');
-  if (splitHighlightFastest) splitHighlightFastest.checked = cfg.splitHighlightFastest !== false;
+  if (splitHighlightFastest) splitHighlightFastest.checked = (cfg.splitHighlightFastest !== false) && (cfg.splitsShowFastest !== false);
 
   const splitWidgetTitleInput = document.getElementById('inputSplitWidgetTitle');
   if (splitWidgetTitleInput) splitWidgetTitleInput.value = cfg.splitCustomTitle || '';
@@ -465,18 +468,12 @@ function deleteSelectedTarget(targetKey = null) {
 
   // 5. Default: Delete (hide) the entire widget
   const showKey = 'showWidget' + key.charAt(0).toUpperCase() + key.slice(1);
-  if (showKey in state.config) {
-    state.config[showKey] = false;
-    const widgetCheckbox = document.getElementById(showKey) || document.getElementById('toggle' + key.charAt(0).toUpperCase() + key.slice(1));
-    if (widgetCheckbox) widgetCheckbox.checked = false;
-    selectWidget(null);
-    triggerRender();
-    showToast(`Deleted ${key} widget`);
-  } else {
-    selectWidget(null);
-    triggerRender();
-    showToast(`Deselected ${key}`);
-  }
+  state.config[showKey] = false;
+  const widgetCheckbox = document.getElementById(showKey) || document.getElementById('toggle' + key.charAt(0).toUpperCase() + key.slice(1));
+  if (widgetCheckbox) widgetCheckbox.checked = false;
+  selectWidget(null);
+  triggerRender();
+  showToast(`Deleted ${key} widget`);
 }
 window.deleteSelectedTarget = deleteSelectedTarget;
 
@@ -1832,9 +1829,10 @@ function setupSplitsControls() {
   // Fastest Split Highlight Toggle (New User Requirement)
   const toggleFastest = document.getElementById('toggleFastestSplitHighlight');
   if (toggleFastest) {
-    toggleFastest.checked = state.config.splitHighlightFastest !== false;
+    toggleFastest.checked = state.config.splitHighlightFastest !== false && state.config.splitsShowFastest !== false;
     toggleFastest.addEventListener('change', (e) => {
       state.config.splitHighlightFastest = e.target.checked;
+      state.config.splitsShowFastest = e.target.checked;
       triggerRender();
     });
   }
@@ -2011,6 +2009,7 @@ function setupWidgetsControls() {
     { id: 'toggleHero', key: 'showWidgetHero' },
     { id: 'toggleMetrics', key: 'showWidgetMetrics' },
     { id: 'toggleSplits', key: 'showWidgetSplits' },
+    { id: 'toggleSplitHighlight', key: 'showWidgetSplitHighlight' },
     { id: 'toggleElevation', key: 'showWidgetElevation' },
     { id: 'toggleHrZones', key: 'showWidgetHrZones' },
     { id: 'toggleBrand', key: 'showWidgetBrand' },
@@ -4674,8 +4673,10 @@ function setupGizmoController() {
     if (e.touches.length === 1) {
       const t = e.touches[0];
       handlePointerDown(t.clientX, t.clientY);
+    } else {
+      isInteracting = false;
     }
-  }, { passive: false });
+  }, { passive: true });
 
   // Helper to test if clicking/tapping a foreground widget when background photo is selected
   const handleGizmoPointerDown = (clientX, clientY) => {
@@ -4720,8 +4721,10 @@ function setupGizmoController() {
     if (e.target.classList.contains('gizmo-handle') || e.target.tagName === 'BUTTON' || e.target.tagName === 'SELECT') return;
     if (e.touches.length === 1) {
       handleGizmoPointerDown(e.touches[0].clientX, e.touches[0].clientY);
+    } else {
+      isInteracting = false;
     }
-  }, { passive: false });
+  }, { passive: true });
 
   // Hover cursor for background photo gizmo
   gizmoBox.addEventListener('mousemove', (e) => {
@@ -4791,12 +4794,14 @@ function setupGizmoController() {
     });
 
     h.addEventListener('touchstart', (e) => {
-      e.stopPropagation();
       if (e.touches.length === 1) {
+        e.stopPropagation();
         const t = e.touches[0];
         startResize(t.clientX, t.clientY);
+      } else {
+        isInteracting = false;
       }
-    }, { passive: false });
+    }, { passive: true });
   });
 
   // Global Pointer Move & Up
@@ -4930,7 +4935,11 @@ function setupGizmoController() {
 
   window.addEventListener('mousemove', (e) => handlePointerMove(e.clientX, e.clientY));
   window.addEventListener('touchmove', (e) => {
-    if (isInteracting && e.touches.length > 0) {
+    if (e.touches.length > 1) {
+      if (isInteracting) isInteracting = false;
+      return;
+    }
+    if (isInteracting && e.touches.length === 1) {
       e.preventDefault();
       handlePointerMove(e.touches[0].clientX, e.touches[0].clientY);
     }
