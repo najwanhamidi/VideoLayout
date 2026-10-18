@@ -132,6 +132,11 @@ const state = {
     widgetBgStyles: {},
     // Sub-Element Offsets & Z-depth per widget (move individual text, icons, graphs X, Y, Z)
     widgetElementOffsets: {},
+    // Snap to Grid Configuration (New User Requirement)
+    snapToGrid: false,
+    gridSize: 20,
+    showGridOverlay: false,
+    isDraggingGrid: false,
   },
   export: {
     scale: 2, // 2X Ultra crisp default
@@ -341,12 +346,47 @@ function syncAllControlsWithConfig() {
   if (splitWidgetTitleInput) splitWidgetTitleInput.value = cfg.splitCustomTitle || '';
 
   if (cfg.splitColumns) {
-    Object.entries(cfg.splitColumns).forEach(([colKey, val]) => {
-      const capKey = colKey.charAt(0).toUpperCase() + colKey.slice(1);
-      const el = document.getElementById('splitCol' + capKey);
-      if (el) el.checked = !!val;
+    const colIdMap = {
+      time: 'colSplitTime',
+      pace: 'colSplitPace',
+      delta: 'colSplitDelta',
+      avgHr: 'colSplitAvgHr',
+      maxHr: 'colSplitMaxHr',
+      minHr: 'colSplitMinHr',
+      cadence: 'colSplitCadence',
+      elevation: 'colSplitElev',
+    };
+    Object.entries(colIdMap).forEach(([colKey, elId]) => {
+      const el = document.getElementById(elId);
+      if (el) el.checked = cfg.splitColumns[colKey] !== false;
     });
   }
+
+  // Snap to Grid sync
+  const snapToGridVal = !!cfg.snapToGrid;
+  const gridSizeVal = cfg.gridSize || 20;
+  const showGridOverlayVal = !!cfg.showGridOverlay;
+
+  const snapBtn = document.getElementById('toggleSnapToGridBtn');
+  if (snapBtn) {
+    snapBtn.textContent = snapToGridVal ? `🧲 Snap: ON (${gridSizeVal}px)` : '🧲 Snap: OFF';
+    snapBtn.classList.toggle('btn-toggle-active', snapToGridVal);
+  }
+  const snapBadge = document.getElementById('snapGridStatusBadge');
+  if (snapBadge) {
+    snapBadge.textContent = snapToGridVal ? `ON (${gridSizeVal}px)` : 'OFF';
+    snapBadge.style.color = snapToGridVal ? 'var(--accent-volt)' : 'var(--text-muted)';
+  }
+  const snapCb = document.getElementById('snapToGridCheckbox');
+  if (snapCb) snapCb.checked = snapToGridVal;
+  const snapTbSize = document.getElementById('snapGridToolbarSize');
+  if (snapTbSize) snapTbSize.value = gridSizeVal;
+  const snapNum = document.getElementById('snapGridSizeNumber');
+  if (snapNum) snapNum.value = gridSizeVal;
+  const snapSlider = document.getElementById('snapGridSizeSlider');
+  if (snapSlider) snapSlider.value = gridSizeVal;
+  const showGridCb = document.getElementById('showGridOverlayCheckbox');
+  if (showGridCb) showGridCb.checked = showGridOverlayVal;
 
   // 8. Text Tab and Activity Inputs
   syncInputsWithActivity(state.currentActivity);
@@ -779,6 +819,7 @@ function init() {
   window.state = state;
   window.renderer = renderer;
   window.selectWidget = selectWidget;
+  window.centerWidget = centerWidget;
   window.triggerRender = triggerRender;
   triggerRender();
 }
@@ -1468,6 +1509,11 @@ function extractTemplateConfig(cfg) {
     widgetBgStyles: cfg.widgetBgStyles ? JSON.parse(JSON.stringify(cfg.widgetBgStyles)) : {},
     widgetElementOffsets: cfg.widgetElementOffsets ? JSON.parse(JSON.stringify(cfg.widgetElementOffsets)) : {},
     elementStyles: cfg.elementStyles ? JSON.parse(JSON.stringify(cfg.elementStyles)) : {},
+
+    // Snap to Grid
+    snapToGrid: !!cfg.snapToGrid,
+    gridSize: cfg.gridSize || 20,
+    showGridOverlay: !!cfg.showGridOverlay,
   };
 }
 
@@ -1818,13 +1864,101 @@ function setupSplitsControls() {
   colBinds.forEach(({ id, key }) => {
     const cb = document.getElementById(id);
     if (cb) {
-      cb.checked = !!state.config.splitColumns[key];
+      cb.checked = state.config.splitColumns[key] !== false;
       cb.addEventListener('change', (e) => {
         state.config.splitColumns[key] = e.target.checked;
+        if (state.selectedWidget && state.selectedWidget.startsWith('splits_')) {
+          const inst = state.config.extraWidgetInstances?.find((i) => i.id === state.selectedWidget);
+          if (inst) {
+            if (!inst.options) inst.options = {};
+            if (!inst.options.splitColumns) inst.options.splitColumns = { ...state.config.splitColumns };
+            inst.options.splitColumns[key] = e.target.checked;
+          }
+        }
         triggerRender();
       });
     }
   });
+
+  // Snap to Grid Controls & Listeners (New User Requirement)
+  const updateSnapToGridUI = (enabled, size, showGrid) => {
+    state.config.snapToGrid = !!enabled;
+    if (size !== undefined && size !== null) {
+      state.config.gridSize = Math.max(2, Math.min(200, parseInt(size, 10) || 20));
+    }
+    if (showGrid !== undefined) state.config.showGridOverlay = !!showGrid;
+
+    const gSize = state.config.gridSize || 20;
+    const snapBtn = document.getElementById('toggleSnapToGridBtn');
+    if (snapBtn) {
+      snapBtn.textContent = state.config.snapToGrid ? `🧲 Snap: ON (${gSize}px)` : '🧲 Snap: OFF';
+      snapBtn.classList.toggle('btn-toggle-active', state.config.snapToGrid);
+    }
+    const snapBadge = document.getElementById('snapGridStatusBadge');
+    if (snapBadge) {
+      snapBadge.textContent = state.config.snapToGrid ? `ON (${gSize}px)` : 'OFF';
+      snapBadge.style.color = state.config.snapToGrid ? 'var(--accent-volt)' : 'var(--text-muted)';
+    }
+    const snapCb = document.getElementById('snapToGridCheckbox');
+    if (snapCb) snapCb.checked = state.config.snapToGrid;
+    const snapTbSize = document.getElementById('snapGridToolbarSize');
+    if (snapTbSize) snapTbSize.value = gSize;
+    const snapNum = document.getElementById('snapGridSizeNumber');
+    if (snapNum) snapNum.value = gSize;
+    const snapSlider = document.getElementById('snapGridSizeSlider');
+    if (snapSlider) snapSlider.value = gSize;
+    const showGridCb = document.getElementById('showGridOverlayCheckbox');
+    if (showGridCb) showGridCb.checked = !!state.config.showGridOverlay;
+
+    triggerRender();
+  };
+
+  const toggleSnapBtn = document.getElementById('toggleSnapToGridBtn');
+  if (toggleSnapBtn) {
+    toggleSnapBtn.addEventListener('click', () => {
+      const next = !state.config.snapToGrid;
+      updateSnapToGridUI(next, state.config.gridSize, state.config.showGridOverlay);
+      showToast(next ? `Snap to Grid: ON (${state.config.gridSize}px)` : 'Snap to Grid: OFF');
+    });
+  }
+
+  const snapCb = document.getElementById('snapToGridCheckbox');
+  if (snapCb) {
+    snapCb.addEventListener('change', (e) => {
+      updateSnapToGridUI(e.target.checked, state.config.gridSize, state.config.showGridOverlay);
+      showToast(e.target.checked ? `Snap to Grid: ON (${state.config.gridSize}px)` : 'Snap to Grid: OFF');
+    });
+  }
+
+  const handleGridSizeInput = (val) => {
+    const s = Math.max(2, Math.min(200, parseInt(val, 10) || 20));
+    updateSnapToGridUI(state.config.snapToGrid, s, state.config.showGridOverlay);
+  };
+
+  const snapTbSize = document.getElementById('snapGridToolbarSize');
+  if (snapTbSize) snapTbSize.addEventListener('input', (e) => handleGridSizeInput(e.target.value));
+
+  const snapNum = document.getElementById('snapGridSizeNumber');
+  if (snapNum) snapNum.addEventListener('input', (e) => handleGridSizeInput(e.target.value));
+
+  const snapSlider = document.getElementById('snapGridSizeSlider');
+  if (snapSlider) snapSlider.addEventListener('input', (e) => handleGridSizeInput(e.target.value));
+
+  document.querySelectorAll('.grid-preset-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const s = parseInt(btn.dataset.grid, 10);
+      updateSnapToGridUI(true, s, state.config.showGridOverlay);
+      showToast(`Grid size set to ${s}px (Snap enabled)`);
+    });
+  });
+
+  const showGridCb = document.getElementById('showGridOverlayCheckbox');
+  if (showGridCb) {
+    showGridCb.addEventListener('change', (e) => {
+      state.config.showGridOverlay = e.target.checked;
+      triggerRender();
+    });
+  }
 
   // Fastest Split Highlight Toggle (New User Requirement)
   const toggleFastest = document.getElementById('toggleFastestSplitHighlight');
@@ -2332,6 +2466,223 @@ function setupHeaderTemplateControls() {
     header: { name: 'Header Widget', icon: '🏷️' },
   };
 
+  const WIDGET_TEMPLATE_OPTIONS = {
+    header: {
+      designKey: 'headerDesign',
+      mainSelectId: 'headerDesignSelect',
+      defaultVal: 'modern',
+      options: [
+        { value: 'modern', label: 'Modern Clean (Left title, date, runner)' },
+        { value: 'centered-hero', label: 'Centered Hero (Centered title & date badge)' },
+        { value: 'centered-crest', label: 'Centered Athletic Crest (Crest & Symmetrical Wings)' },
+        { value: 'centered-minimal-clean', label: 'Centered Minimal Clean (Hairline Typographic Divider)' },
+        { value: 'circular-monogram', label: 'Circular Runner Monogram (Centered Seal & Stacked Subtext)' },
+        { value: 'stacked-editorial', label: 'Stacked Editorial (Headline with date kicker & divider)' },
+        { value: 'split-banner', label: 'Split Calendar Banner (Title + calendar day box)' },
+        { value: 'retro-cyber', label: 'Retro Cyber HUD (Bracket tech frame & crosses)' },
+        { value: 'badge-shield', label: 'Collegiate Shield (Crest & athletic stars)' },
+        { value: 'minimal-topbar', label: 'Minimal Top Bar (Sleek floating pill HUD)' },
+        { value: 'magazine-cover', label: 'Magazine Headline (Bold cover layout)' },
+        { value: 'athletic', label: 'Sport Athletic HUD (Category chip & runner)' },
+        { value: 'pill', label: 'Glass Banner Pill (Rounded with avatar)' },
+        { value: 'minimalist-stamp', label: 'Passport Stamp (Border seal & date)' },
+        { value: 'hud-flight', label: 'Flight HUD (Instrument crosshairs & telemetry)' },
+        { value: 'race-ticker', label: 'Neon Racing Ticker (Tape banner with dots)' },
+        { value: 'vertical-sidebar-badge', label: 'Vertical Accent Card (Stacked Headline with Sidebar Stripe)' },
+        { value: 'running-bib-header', label: 'Marathon Race Bib Header (Bib Number & Stamped Seal)' },
+        { value: 'broadcast-lowerthird', label: 'Esports / TV Broadcast Banner (Lower-Third Live Ribbon)' },
+        { value: 'architect-monolith', label: 'Architectural Monolith (Big Calendar Block & Condensed Type)' },
+      ],
+    },
+    map: {
+      designKey: 'mapDesign',
+      mainSelectId: 'mapDesignSelect',
+      defaultVal: 'glow',
+      options: [
+        { value: 'bare-route', label: 'Pure Route (Transparent / No Backdrop)' },
+        { value: 'bare-glow', label: 'Glowing Route (Transparent / No Backdrop)' },
+        { value: 'bare-speed', label: 'Speed Heatmap Route (No Backdrop)' },
+        { value: 'glow', label: 'Neon Glowing Polyline (Card)' },
+        { value: 'card', label: 'Technical Card (with corner crosshairs)' },
+        { value: 'milestones', label: 'Milestone Pins (1k, 2k, 3k numbered dots)' },
+        { value: 'minimal', label: 'Hairline Minimal (Ultra-clean stroke)' },
+        { value: 'neon-pulse', label: 'Electric Neon Pulse & Tech Grid' },
+        { value: 'framed-polaroid', label: 'Polaroid Photo Frame & Tape' },
+        { value: 'gradient-speed', label: 'Pace Speed Dynamic Gradient' },
+        { value: 'cyber-wireframe', label: 'Cyber Grid & Compass HUD (Telemetry Grid & Coordinates)' },
+        { value: 'radar-screen', label: 'Tactical Radar Screen (Concentric Radar Rings & Beam)' },
+        { value: 'vintage-topo-map', label: 'Topographic Elevation Contours (Organic Terrain Rings)' },
+      ],
+    },
+    hero: {
+      designKey: 'heroDesign',
+      mainSelectId: 'heroDesignSelect',
+      defaultVal: 'mega',
+      hasMetricSelect: true,
+      options: [
+        { value: 'mega', label: 'Mega Athletic Display' },
+        { value: 'centered-radial-pod', label: 'Centered Radial Stadium Pod (Glowing Halo & Unit Badge)' },
+        { value: 'centered-stadium-capsule', label: 'Centered Stadium Capsule (Pill Frame & Centered Stack)' },
+        { value: 'centered-monolith', label: 'Centered Monolith (Ultra Bold Typography & Neon Underline)' },
+        { value: 'card', label: 'Structured Stats Card' },
+        { value: 'boxed-bracket', label: 'HUD Corner Brackets (Glowing Anchors)' },
+        { value: 'stacked-duo', label: 'Stacked Duo-Tone (Split Bar)' },
+        { value: 'badge-pill', label: 'Athletic Pill Capsule (Icon Ribbon)' },
+        { value: 'cyber-glass', label: 'Frosted Cyber Glass (Neon Rim)' },
+        { value: 'racing-bib', label: 'Official Marathon Bib (Perforated)' },
+        { value: 'minimal-line', label: 'Ultra-Minimal Hairline Stripe' },
+        { value: 'split-pill', label: 'Two-Tone Split Pill (with icon)' },
+        { value: 'outline', label: 'Clean Outlined (No background card)' },
+        { value: 'tape-sticker', label: 'Athletic Tape Sticker (Racing hazard)' },
+        { value: 'digital-lcd', label: 'Retro Stopwatch LCD (Segment glow)' },
+        { value: 'speedometer', label: 'Speedometer Arc Gauge (Radial curve)' },
+        { value: 'vertical-totem', label: 'Vertical Monolith Totem (Stacked Mega Typography)' },
+        { value: 'precision-hud-gauge', label: 'Precision Arc Gauge HUD (Dual Calibrated Dials)' },
+        { value: 'tactical-crosshair', label: 'Tactical Crosshair Optic (Reticle & Corner Anchors)' },
+        { value: 'angled-speed-slash', label: 'Dynamic Speed Slash (Athletic Slanted Gradient)' },
+      ],
+    },
+    metrics: {
+      designKey: 'metricsDesign',
+      mainSelectId: 'metricsDesignSelect',
+      defaultVal: 'grid',
+      options: [
+        { value: 'grid', label: 'Glass Cards Grid (Multi-Col)' },
+        { value: 'centered-pod-triad', label: 'Centered Pod Triad (3 Symmetrical Rounded Pods)' },
+        { value: 'centered-pill-clusters', label: 'Centered Pill Clusters (Symmetrical Horizontal Pills)' },
+        { value: 'centered-cross-quad', label: 'Centered Crosshair Quad (Symmetrical 2x2 Grid)' },
+        { value: 'cards-2col', label: '2-Column Bold Stat Cards (Indicator Bar)' },
+        { value: 'vertical-stacked-hud', label: 'Vertical Telemetry Rows (Icon + Value)' },
+        { value: 'vertical-minimal-stack', label: 'Vertical Minimalist Stack (Clean Hairline Rows)' },
+        { value: 'vertical-pill-stack', label: 'Vertical Capsule Pills (Floating Complications)' },
+        { value: 'vertical-timeline-flow', label: 'Vertical Telemetry Timeline (Glowing Axis & Nodes)' },
+        { value: 'vertical-data-ladder', label: 'Vertical Telemetry Ladder (Stepped Brackets & Leader Dots)' },
+        { value: 'vertical-athletic-cards', label: 'Vertical Athletic Cards (Rank Badges #01)' },
+        { value: 'split-scoreboard', label: 'LED Marathon Scoreboard (Segmented)' },
+        { value: 'cyber-brackets', label: 'Cyberpunk Corner Brackets' },
+        { value: 'hex-badges', label: 'Chamfered Tech Badges (Athletic Hex)' },
+        { value: 'horizontal-ticker', label: 'Horizontal Ribbon Ticker (Dot Dividers)' },
+        { value: 'strip', label: 'Unified HUD Strip (Divided bar)' },
+        { value: 'badges', label: 'Pill Badges (Outlined pills)' },
+        { value: 'compact', label: 'Floating Compact (No boxes)' },
+        { value: 'circular-gauges', label: 'Radial Circular Gauge Rings' },
+        { value: 'editorial-table', label: 'Official Marathon Results Table' },
+        { value: 'pill-row', label: 'Horizontal Capsule Pill Row' },
+        { value: 'horizontal-pipeline', label: 'Horizontal Telemetry Pipeline (Inline Stream //)' },
+        { value: 'horizontal-chips', label: 'Horizontal Stat Chips (Icon + Label + Value inline)' },
+        { value: 'horizontal-slash-minimal', label: 'Horizontal Minimalist Slash (Clean Floating)' },
+        { value: 'horizontal-linear-cards', label: 'Horizontal Leaderboard Rows (Left/Right)' },
+      ],
+    },
+    splits: {
+      designKey: 'splitsDesign',
+      mainSelectId: 'splitsDesignSelect',
+      defaultVal: 'vertical-bars',
+      options: [
+        { value: 'vertical-bars', label: 'Vertical Columns (Fastest glowing)' },
+        { value: 'centered-split-ladder', label: 'Centered Split Ladder (Vertical Symmetrical Spine)' },
+        { value: 'centered-split-pills', label: 'Centered Split Pills (Symmetrical KM Badges)' },
+        { value: 'horizontal-bars', label: 'Horizontal Progress Bars' },
+        { value: 'pace-table', label: 'Split Table with Customizable Data' },
+        { value: 'pace-delta-bars', label: 'Pace Delta Equalizer (+/- Center Axis)' },
+        { value: 'card-grid', label: 'Compact Multi-Card Split Tiles' },
+        { value: 'speed-dots', label: 'Connected Pace Dots Graph' },
+        { value: 'split-bubbles', label: 'Floating Rounded Split Bubbles' },
+        { value: 'vertical-split-cards', label: 'Vertical Split Cards (Stacked Interval Tiles with Delta)' },
+        { value: 'split-ladder-timeline', label: 'Vertical Route Timeline (Mile/KM Route Wire)' },
+        { value: 'compact-dot-matrix', label: 'Compact Pace Dot Matrix (Pace Intensity Grid)' },
+      ],
+    },
+    splitHighlight: {
+      designKey: 'splitHighlightDesign',
+      mainSelectId: 'splitHighlightDesignSelect',
+      defaultVal: 'spotlight',
+      hasTargetSelect: true,
+      options: [
+        { value: 'spotlight', label: 'Spotlight Card (Big pace & stats)' },
+        { value: 'centered-trophy-card', label: 'Centered Trophy Card (Golden Halo & Fast Split Badge)' },
+        { value: 'bib', label: 'Race Bib Badge (Interval bib style)' },
+        { value: 'medal-podium', label: 'Gold Medal Trophy Podium' },
+        { value: 'polaroid-clip', label: 'Paper Note with Paperclip' },
+        { value: 'trophy-cup', label: 'Trophy Podium Banner (Gold Ribbon & Fast Split)' },
+        { value: 'split-terminal', label: 'Digital Split Terminal (Monospace Code Prompt)' },
+      ],
+    },
+    elevation: {
+      designKey: 'elevationDesign',
+      mainSelectId: 'elevationDesignSelect',
+      defaultVal: 'area',
+      options: [
+        { value: 'area', label: 'Smooth Gradient Area' },
+        { value: 'centered-mountain-peak', label: 'Centered Mountain Peak (Symmetrical Peak & Gain Banner)' },
+        { value: 'topo-contours', label: 'Topographic Contour Fill' },
+        { value: 'gradient-altitude', label: 'High-Contrast Altitude Gradient' },
+        { value: 'line', label: 'Minimalist Line Graph' },
+        { value: 'stepped-gradient', label: 'Stepped Terrain Canyon' },
+        { value: 'mountain-peaks', label: 'Mountain Peaks & Summit Flag' },
+        { value: 'stepped-bars', label: 'Stepped Altitude Columns (Quantized Terrain Bars)' },
+        { value: 'dual-fill', label: 'Dual-Zone Climb & Descent Gradient (Ascent vs Descent)' },
+      ],
+    },
+    paceGraph: {
+      designKey: 'paceGraphDesign',
+      mainSelectId: 'paceGraphDesignSelect',
+      defaultVal: 'area',
+      options: [
+        { value: 'area', label: 'Smooth Translucent Area' },
+        { value: 'centered-speed-pulse', label: 'Centered Speed Pulse (Oscilloscope Telemetry Wave)' },
+        { value: 'bar-histogram', label: 'Pace Bar Histogram' },
+        { value: 'cyber-hud-pace', label: 'Cyberpunk HUD with Target Pace Line' },
+        { value: 'line', label: 'Crisp High-Precision Line' },
+        { value: 'gradient-zone', label: 'Multi-Zone Color Fill' },
+        { value: 'stepped-splits', label: 'Stepped Splits with Avg Pace Dash' },
+      ],
+    },
+    hrGraph: {
+      designKey: 'hrGraphDesign',
+      mainSelectId: 'hrGraphDesignSelect',
+      defaultVal: 'filled-area',
+      options: [
+        { value: 'filled-area', label: 'Red Gradient Area' },
+        { value: 'centered-cardiac-halo', label: 'Centered Cardiac Halo (Glowing ECG Waveform)' },
+        { value: 'zone-gradient-strip', label: 'Z1-Z5 Multi-Zone Continuous Gradient' },
+        { value: 'cardiac-monitor', label: 'Cardiac Monitor Oscilloscope CRT' },
+        { value: 'ecg-wave', label: 'Colored ECG Wave (Zones)' },
+        { value: 'zone-bars', label: '5-Zone Vertical Frequency Bars' },
+        { value: 'pulse-glow', label: 'Glowing Pulse Wave with Alert' },
+      ],
+    },
+    hrBadge: {
+      designKey: 'hrBadgeDesign',
+      mainSelectId: 'hrBadgeDesignSelect',
+      defaultVal: 'pill',
+      options: [
+        { value: 'pill', label: 'Pulsing Heart Pill' },
+        { value: 'centered-heart-crest', label: 'Centered Heart Crest (Glowing Heart & Centered BPM)' },
+        { value: 'zone-badge', label: 'Intensity Zone Blocks Badge' },
+        { value: 'lcd-pulse', label: 'Cardiac Monitor Oscilloscope LCD' },
+        { value: 'card', label: 'Heart Stats Card' },
+        { value: 'heart-gauge', label: 'Circular Radial Heart Gauge' },
+        { value: 'compact-tag', label: 'Smartwatch Complication Tag' },
+        { value: 'vertical-hr-thermometer', label: 'Vertical Zone Thermometer (5-Zone Meter Column)' },
+        { value: 'tactical-ecg-card', label: 'ECG Telemetry Strip (Oscilloscope CRT Strip)' },
+      ],
+    },
+    brand: {
+      designKey: 'brandStyle',
+      mainSelectId: null,
+      defaultVal: 'runcut',
+      options: [
+        { value: 'runcut', label: '⚡ RUNOVERLAY (Default Brand)' },
+        { value: 'strava', label: 'Strava Runner Watermark' },
+        { value: 'nike', label: 'Nike Just Do It • Run Club' },
+        { value: 'custom', label: 'Custom Watermark Text' },
+        { value: 'centered-cinematic-stamp', label: 'Centered Cinematic Stamp (◆ BRAND ◆)' },
+      ],
+    },
+  };
+  window.WIDGET_TEMPLATE_OPTIONS = WIDGET_TEMPLATE_OPTIONS;
+
   window.renderExtraWidgetsUI = () => {
     const container = document.getElementById('extraWidgetsListContainer');
     if (!container) return;
@@ -2347,28 +2698,78 @@ function setupHeaderTemplateControls() {
       const catInfo = WIDGET_CATEGORIES[inst.category] || { name: inst.category, icon: '📦' };
       const itemEl = document.createElement('div');
       itemEl.className = 'extra-widget-item';
-      itemEl.style.cssText = 'display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.04); border: 1px solid var(--border-color); border-radius: 8px; padding: 8px 12px; gap: 8px;';
+      itemEl.style.cssText = 'display: flex; flex-direction: column; background: rgba(255,255,255,0.04); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 12px; gap: 8px;';
 
       const isDel = inst.enabled === false;
+      const tmplInfo = WIDGET_TEMPLATE_OPTIONS[inst.category];
+      const curTmpl = (inst.options && tmplInfo && inst.options[tmplInfo.designKey]) || (tmplInfo && state.config[tmplInfo.designKey]) || (tmplInfo ? tmplInfo.defaultVal : '');
+
+      let templateRowHtml = '';
+      if (tmplInfo && tmplInfo.options && tmplInfo.options.length > 0) {
+        const optionsListHtml = tmplInfo.options.map((opt) => `<option value="${opt.value}" ${opt.value === curTmpl ? 'selected' : ''}>${opt.label}</option>`).join('');
+
+        let extraFieldHtml = '';
+        if (inst.category === 'hero') {
+          const curMetric = (inst.options && inst.options.heroMetric) || 'distance';
+          extraFieldHtml = `
+            <div style="display: flex; align-items: center; gap: 4px;">
+              <span style="font-size: 0.68rem; color: var(--accent-volt); font-weight: 700; white-space: nowrap;">📊 Metric:</span>
+              <select class="form-select inst-metric-select" style="font-size: 0.72rem; padding: 2px 4px; border-radius: 4px; border-color: rgba(204,255,0,0.3); background: rgba(0,0,0,0.5); color: #fff;">
+                <option value="distance" ${curMetric === 'distance' ? 'selected' : ''}>Distance</option>
+                <option value="pace" ${curMetric === 'pace' ? 'selected' : ''}>Pace</option>
+                <option value="time" ${curMetric === 'time' ? 'selected' : ''}>Time</option>
+                <option value="hr" ${curMetric === 'hr' ? 'selected' : ''}>Heart Rate</option>
+              </select>
+            </div>
+          `;
+        } else if (inst.category === 'splitHighlight') {
+          const curTarget = (inst.options && inst.options.highlightSplitTarget) || 'fastest';
+          extraFieldHtml = `
+            <div style="display: flex; align-items: center; gap: 4px;">
+              <span style="font-size: 0.68rem; color: var(--accent-volt); font-weight: 700; white-space: nowrap;">⚡ Target:</span>
+              <select class="form-select inst-target-select" style="font-size: 0.72rem; padding: 2px 4px; border-radius: 4px; border-color: rgba(204,255,0,0.3); background: rgba(0,0,0,0.5); color: #fff;">
+                <option value="fastest" ${curTarget === 'fastest' ? 'selected' : ''}>Fastest</option>
+                <option value="slowest" ${curTarget === 'slowest' ? 'selected' : ''}>Slowest</option>
+                <option value="final" ${curTarget === 'final' ? 'selected' : ''}>Final</option>
+              </select>
+            </div>
+          `;
+        }
+
+        templateRowHtml = `
+          <div style="display: flex; gap: 6px; align-items: center; justify-content: space-between; padding-top: 6px; border-top: 1px dashed rgba(255,255,255,0.08); flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 4px; flex: 1; min-width: 140px;">
+              <span style="font-size: 0.68rem; color: #00f0ff; font-weight: 700; white-space: nowrap;">🎨 Style:</span>
+              <select class="form-select inst-template-select" style="font-size: 0.72rem; padding: 2px 6px; border-radius: 4px; flex: 1; min-width: 120px; border-color: rgba(0,240,255,0.3); background: rgba(0,0,0,0.5); color: #fff;">
+                ${optionsListHtml}
+              </select>
+            </div>
+            ${extraFieldHtml}
+          </div>
+        `;
+      }
 
       itemEl.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0;">
-          <label class="switch" style="transform: scale(0.85); margin-bottom: 0;">
-            <input type="checkbox" ${inst.enabled !== false ? 'checked' : ''} data-inst-id="${inst.id}">
-            <span class="slider"></span>
-          </label>
-          <div style="min-width: 0; flex: 1;">
-            <div style="font-size: 0.8rem; font-weight: 700; color: ${isDel ? '#f87171' : '#fff'}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-              ${catInfo.icon} ${inst.name || (catInfo.name + ' (' + inst.id + ')')} ${isDel ? '(Hidden)' : ''}
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0;">
+            <label class="switch" style="transform: scale(0.85); margin-bottom: 0;">
+              <input type="checkbox" ${inst.enabled !== false ? 'checked' : ''} data-inst-id="${inst.id}">
+              <span class="slider"></span>
+            </label>
+            <div style="min-width: 0; flex: 1;">
+              <div class="inst-title-label" style="font-size: 0.8rem; font-weight: 700; color: ${isDel ? '#f87171' : '#fff'}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                ${catInfo.icon} ${inst.name || (catInfo.name + ' (' + inst.id + ')')} ${isDel ? '(Hidden)' : ''}
+              </div>
+              <div style="font-size: 0.68rem; color: var(--text-muted);">ID: ${inst.id}</div>
             </div>
-            <div style="font-size: 0.68rem; color: var(--text-muted);">ID: ${inst.id}</div>
+          </div>
+          <div style="display: flex; gap: 4px; flex-shrink: 0;">
+            <button type="button" class="btn btn-secondary inspect-btn" style="padding: 2px 8px; font-size: 0.7rem; color: var(--accent-volt);" title="Select and style in Element Inspector">🎯 Inspect</button>
+            <button type="button" class="btn btn-secondary dup-btn" style="padding: 2px 6px; font-size: 0.7rem;" title="Duplicate this instance">📋</button>
+            <button type="button" class="btn btn-secondary del-btn" style="padding: 2px 6px; font-size: 0.7rem; color: #f87171;" title="Remove this instance">🗑️</button>
           </div>
         </div>
-        <div style="display: flex; gap: 4px; flex-shrink: 0;">
-          <button type="button" class="btn btn-secondary inspect-btn" style="padding: 2px 8px; font-size: 0.7rem; color: var(--accent-volt);" title="Select and style in Element Inspector">🎯 Inspect</button>
-          <button type="button" class="btn btn-secondary dup-btn" style="padding: 2px 6px; font-size: 0.7rem;" title="Duplicate this instance">📋</button>
-          <button type="button" class="btn btn-secondary del-btn" style="padding: 2px 6px; font-size: 0.7rem; color: #f87171;" title="Remove this instance">🗑️</button>
-        </div>
+        ${templateRowHtml}
       `;
 
       itemEl.querySelector('input[type="checkbox"]').addEventListener('change', (e) => {
@@ -2383,6 +2784,57 @@ function setupHeaderTemplateControls() {
       itemEl.querySelector('.del-btn').addEventListener('click', () => {
         window.removeWidgetInstance(inst.id);
       });
+
+      const tmplSel = itemEl.querySelector('.inst-template-select');
+      if (tmplSel && tmplInfo) {
+        tmplSel.addEventListener('change', (e) => {
+          pushUndoSnapshot();
+          if (!inst.options) inst.options = {};
+          inst.options[tmplInfo.designKey] = e.target.value;
+          if (inst.category === 'header') {
+            inst.options.headerTemplate = e.target.value;
+            inst.options.headerDesign = e.target.value;
+          }
+          triggerRender();
+          if (state.selectedWidget === inst.id && window.syncInspectorWithSelectedElement) {
+            window.syncInspectorWithSelectedElement(inst.id);
+          }
+          showToast(`Changed template of ${inst.name || inst.id} to ${e.target.value}`);
+        });
+      }
+
+      const metricSel = itemEl.querySelector('.inst-metric-select');
+      if (metricSel) {
+        metricSel.addEventListener('change', (e) => {
+          pushUndoSnapshot();
+          if (!inst.options) inst.options = {};
+          inst.options.heroMetric = e.target.value;
+          const idx = inst.id.split('_')[1] || '2';
+          inst.name = `${catInfo.name} #${idx} (${e.target.value.toUpperCase()})`;
+          const titleLbl = itemEl.querySelector('.inst-title-label');
+          if (titleLbl) titleLbl.textContent = `${catInfo.icon} ${inst.name} ${isDel ? '(Hidden)' : ''}`;
+          window.refreshInspectorElementDropdown();
+          triggerRender();
+          if (state.selectedWidget === inst.id && window.syncInspectorWithSelectedElement) {
+            window.syncInspectorWithSelectedElement(inst.id);
+          }
+          showToast(`Changed metric of ${inst.id} to ${e.target.value.toUpperCase()}`);
+        });
+      }
+
+      const targetSel = itemEl.querySelector('.inst-target-select');
+      if (targetSel) {
+        targetSel.addEventListener('change', (e) => {
+          pushUndoSnapshot();
+          if (!inst.options) inst.options = {};
+          inst.options.highlightSplitTarget = e.target.value;
+          triggerRender();
+          if (state.selectedWidget === inst.id && window.syncInspectorWithSelectedElement) {
+            window.syncInspectorWithSelectedElement(inst.id);
+          }
+          showToast(`Changed target of ${inst.id} to ${e.target.value}`);
+        });
+      }
 
       container.appendChild(itemEl);
     });
@@ -2428,13 +2880,23 @@ function setupHeaderTemplateControls() {
 
     const instName = customName || `${catInfo.name} #${newIdx}${category === 'hero' ? ' (' + defaultMetric.toUpperCase() + ')' : ''}`;
 
+    const defOptions = { heroMetric: defaultMetric };
+    const tmplInfo = WIDGET_TEMPLATE_OPTIONS[category];
+    if (tmplInfo) {
+      defOptions[tmplInfo.designKey] = state.config[tmplInfo.designKey] || tmplInfo.defaultVal;
+      if (category === 'header') {
+        defOptions.headerTemplate = defOptions[tmplInfo.designKey];
+        defOptions.headerDesign = defOptions[tmplInfo.designKey];
+      }
+    }
+
     const newInstance = {
       id: newId,
       category: category,
       name: instName,
       enabled: true,
       options: {
-        heroMetric: defaultMetric,
+        ...defOptions,
         ...options,
       },
     };
@@ -2504,12 +2966,29 @@ function setupHeaderTemplateControls() {
       state.config.widgetTextOverrides[newId] = JSON.parse(JSON.stringify(state.config.widgetTextOverrides[sourceKey]));
     }
 
+    const srcInst = state.config.extraWidgetInstances?.find((w) => w.id === sourceKey);
+    let clonedOptions = {};
+    if (srcInst && srcInst.options) {
+      clonedOptions = JSON.parse(JSON.stringify(srcInst.options));
+    } else {
+      const tmplInfo = WIDGET_TEMPLATE_OPTIONS[category];
+      if (tmplInfo && state.config[tmplInfo.designKey]) {
+        clonedOptions[tmplInfo.designKey] = state.config[tmplInfo.designKey];
+        if (category === 'header') {
+          clonedOptions.headerTemplate = state.config.headerTemplate || state.config.headerDesign;
+        }
+      }
+      if (category === 'hero' && state.config.heroMetric) {
+        clonedOptions.heroMetric = state.config.heroMetric;
+      }
+    }
+
     const newInst = {
       id: newId,
       category: category,
       name: `${catInfo.name} #${count + 2} (Copy)`,
       enabled: true,
-      options: {},
+      options: clonedOptions,
     };
 
     state.config.extraWidgetInstances.push(newInst);
@@ -3012,26 +3491,31 @@ function setupElementInspectorControls() {
       });
     }
 
+    const cat = getWidgetCategory(targetKey);
+    const extraInst = state.config.extraWidgetInstances?.find((w) => w.id === targetKey);
+    const instOpts = extraInst?.options || {};
+
+    const curHeaderTmpl = instOpts.headerTemplate || instOpts.headerDesign || state.config.headerTemplate || state.config.headerDesign || 'modern';
+    const curHeroTmpl = instOpts.heroDesign || state.config.heroDesign || 'mega';
+    const curSplitHighlightTmpl = instOpts.splitHighlightDesign || state.config.splitHighlightDesign || 'spotlight';
+    const curElevationTmpl = instOpts.elevationDesign || state.config.elevationDesign || 'area';
+    const curPaceGraphTmpl = instOpts.paceGraphDesign || state.config.paceGraphDesign || 'area';
+    const curHrGraphTmpl = instOpts.hrGraphDesign || state.config.hrGraphDesign || 'filled-area';
+
     // Populate sub-parts dropdown for this widget
     if (subPartGroup) {
       subPartGroup.innerHTML = '';
       const parts = getSubPartsForWidget(targetKey);
-      const curHeaderTmpl = state.config.headerTemplate || state.config.headerDesign || 'modern';
-      const curHeroTmpl = state.config.heroDesign || 'mega';
-      const curSplitHighlightTmpl = state.config.splitHighlightDesign || 'spotlight';
-      const curElevationTmpl = state.config.elevationDesign || 'area';
-      const curPaceGraphTmpl = state.config.paceGraphDesign || 'area';
-      const curHrGraphTmpl = state.config.hrGraphDesign || 'filled-area';
 
       parts.forEach((p) => {
         let isRelevant = !p.template;
         if (p.template) {
-          if (targetKey === 'header') isRelevant = p.template === curHeaderTmpl;
-          else if (targetKey === 'hero') isRelevant = p.template === curHeroTmpl;
-          else if (targetKey === 'splitHighlight') isRelevant = p.template === curSplitHighlightTmpl;
-          else if (targetKey === 'elevation') isRelevant = p.template === curElevationTmpl;
-          else if (targetKey === 'paceGraph') isRelevant = p.template === curPaceGraphTmpl;
-          else if (targetKey === 'hrGraph') isRelevant = p.template === curHrGraphTmpl;
+          if (cat === 'header') isRelevant = p.template === curHeaderTmpl;
+          else if (cat === 'hero') isRelevant = p.template === curHeroTmpl;
+          else if (cat === 'splitHighlight') isRelevant = p.template === curSplitHighlightTmpl;
+          else if (cat === 'elevation') isRelevant = p.template === curElevationTmpl;
+          else if (cat === 'paceGraph') isRelevant = p.template === curPaceGraphTmpl;
+          else if (cat === 'hrGraph') isRelevant = p.template === curHrGraphTmpl;
           if (!isRelevant && state.config.widgetElementOffsets?.[targetKey]?.[p.key]) {
             isRelevant = true;
           }
@@ -3059,6 +3543,76 @@ function setupElementInspectorControls() {
       const curVal = subPartSelect.value;
       const valid = curVal === 'widget' || curVal === 'bg' || (parts && parts.some((p) => p.key === curVal));
       if (!valid) subPartSelect.value = 'widget';
+    }
+
+    // Sync Template / Design Style Selector in Inspector
+    const tmplContainer = document.getElementById('inspectorTemplateContainer');
+    const tmplSelect = document.getElementById('inspectorTemplateSelect');
+    const tmplBadge = document.getElementById('inspectorTemplateBadge');
+    const extraFieldContainer = document.getElementById('inspectorExtraFieldContainer');
+    const extraFieldLabel = document.getElementById('inspectorExtraFieldLabel');
+    const extraFieldSelect = document.getElementById('inspectorExtraFieldSelect');
+
+    const tmplConfig = WIDGET_TEMPLATE_OPTIONS[cat];
+
+    if (tmplContainer && tmplSelect) {
+      if (tmplConfig && tmplConfig.options && tmplConfig.options.length > 0 && targetKey !== '__bg_photo__') {
+        tmplContainer.style.display = 'block';
+        if (tmplBadge) {
+          tmplBadge.textContent = extraInst ? `${extraInst.name || targetKey}` : 'BASE WIDGET';
+        }
+        if (tmplSelect.getAttribute('data-cat') !== cat) {
+          tmplSelect.innerHTML = '';
+          tmplConfig.options.forEach((opt) => {
+            const o = document.createElement('option');
+            o.value = opt.value;
+            o.textContent = opt.label;
+            tmplSelect.appendChild(o);
+          });
+          tmplSelect.setAttribute('data-cat', cat);
+        }
+
+        let activeVal = '';
+        if (extraInst && extraInst.options) {
+          activeVal = extraInst.options[tmplConfig.designKey] || state.config[tmplConfig.designKey] || tmplConfig.defaultVal;
+        } else {
+          activeVal = state.config[tmplConfig.designKey] || tmplConfig.defaultVal;
+        }
+        tmplSelect.value = activeVal;
+
+        if (tmplConfig.hasMetricSelect && extraFieldContainer && extraFieldSelect) {
+          extraFieldContainer.style.display = 'block';
+          if (extraFieldLabel) extraFieldLabel.textContent = 'Hero Metric:';
+          if (extraFieldSelect.getAttribute('data-type') !== 'heroMetric') {
+            extraFieldSelect.innerHTML = `
+              <option value="distance">📏 Distance</option>
+              <option value="pace">⚡ Average / Current Pace</option>
+              <option value="time">⏱️ Moving Time</option>
+              <option value="hr">💓 Heart Rate</option>
+            `;
+            extraFieldSelect.setAttribute('data-type', 'heroMetric');
+          }
+          const activeMetric = (extraInst && extraInst.options && extraInst.options.heroMetric) || state.config.heroMetric || 'distance';
+          extraFieldSelect.value = activeMetric;
+        } else if (tmplConfig.hasTargetSelect && extraFieldContainer && extraFieldSelect) {
+          extraFieldContainer.style.display = 'block';
+          if (extraFieldLabel) extraFieldLabel.textContent = 'Spotlight Split Target:';
+          if (extraFieldSelect.getAttribute('data-type') !== 'splitTarget') {
+            extraFieldSelect.innerHTML = `
+              <option value="fastest">⚡ Fastest Split</option>
+              <option value="slowest">🐢 Slowest Split</option>
+              <option value="final">🏁 Final Split</option>
+            `;
+            extraFieldSelect.setAttribute('data-type', 'splitTarget');
+          }
+          const activeTarget = (extraInst && extraInst.options && extraInst.options.highlightSplitTarget) || state.config.highlightSplitTarget || 'fastest';
+          extraFieldSelect.value = activeTarget;
+        } else if (extraFieldContainer) {
+          extraFieldContainer.style.display = 'none';
+        }
+      } else {
+        tmplContainer.style.display = 'none';
+      }
     }
 
     const currentPart = subPartSelect ? subPartSelect.value : 'widget';
@@ -3233,6 +3787,10 @@ function setupElementInspectorControls() {
     const badge = document.getElementById('inspectorTextWidgetBadge');
     if (!container) return;
 
+    const cat = getWidgetCategory(targetKey);
+    const extraInst = state.config.extraWidgetInstances?.find((w) => w.id === targetKey);
+    const instOpts = extraInst?.options || {};
+
     const names = {
       header: 'Header Widget',
       hero: 'Hero Metric Card',
@@ -3248,11 +3806,12 @@ function setupElementInspectorControls() {
       brand: 'Watermark / Brand',
     };
 
-    if (badge) badge.textContent = names[targetKey] || targetKey;
+    if (badge) badge.textContent = extraInst ? `${extraInst.name || targetKey}` : (names[targetKey] || targetKey);
     container.innerHTML = '';
 
     const overrides = state.config.widgetTextOverrides;
     if (!overrides[targetKey]) overrides[targetKey] = {};
+    const curOverrides = overrides[targetKey];
 
     // 1. Show Hidden / Deleted elements banner at top if any elements are deleted
     const deletedList = window.getDeletedElements(targetKey);
@@ -3338,395 +3897,460 @@ function setupElementInspectorControls() {
       return input;
     };
 
-    if (targetKey === 'header') {
-      const curHdrTmpl = state.config.headerTemplate || state.config.headerDesign || 'modern';
+    if (cat === 'header') {
+      const curHdrTmpl = instOpts.headerTemplate || instOpts.headerDesign || state.config.headerTemplate || state.config.headerDesign || 'modern';
 
-      addField('title', 'Main Title', state.config.customTitle || overrides.header.title, 'MORNING RUN', (v) => {
-        state.config.customTitle = v;
-        overrides.header.title = v;
-        const el1 = document.getElementById('inputActivityTitle');
-        const el2 = document.getElementById('textTabActivityTitle');
-        if (el1) el1.value = v;
-        if (el2) el2.value = v;
+      const defTitle = targetKey === 'header' ? (state.config.customTitle || 'MORNING RUN') : 'MORNING RUN';
+      addField('title', 'Main Title', curOverrides.title || defTitle, 'MORNING RUN', (v) => {
+        curOverrides.title = v;
+        if (targetKey === 'header') {
+          state.config.customTitle = v;
+          const el1 = document.getElementById('inputActivityTitle');
+          const el2 = document.getElementById('textTabActivityTitle');
+          if (el1) el1.value = v;
+          if (el2) el2.value = v;
+        }
       });
 
-      addField('subtitle', 'Subtitle / Date', state.config.customSubtitle || overrides.header.subtitle, 'Date & Time', (v) => {
-        state.config.customSubtitle = v;
-        overrides.header.subtitle = v;
-        const el = document.getElementById('textTabSubtitle');
-        if (el) el.value = v;
+      const defSubtitle = targetKey === 'header' ? (state.config.customSubtitle || 'Date & Time') : 'Date & Time';
+      addField('subtitle', 'Subtitle / Date', curOverrides.subtitle || defSubtitle, 'Date & Time', (v) => {
+        curOverrides.subtitle = v;
+        if (targetKey === 'header') {
+          state.config.customSubtitle = v;
+          const el = document.getElementById('textTabSubtitle');
+          if (el) el.value = v;
+        }
       });
 
-      addField('runner', 'Runner Handle', state.config.runnerName || overrides.header.runner, '@runner_alex', (v) => {
-        state.config.runnerName = v;
-        overrides.header.runner = v;
-        const el1 = document.getElementById('inputRunnerName');
-        const el2 = document.getElementById('textTabRunnerName');
-        if (el1) el1.value = v;
-        if (el2) el2.value = v;
+      const defRunner = targetKey === 'header' ? (state.config.runnerName || '@runner_alex') : '@runner_alex';
+      addField('runner', 'Runner Handle', curOverrides.runner || defRunner, '@runner_alex', (v) => {
+        curOverrides.runner = v;
+        if (targetKey === 'header') {
+          state.config.runnerName = v;
+          const el1 = document.getElementById('inputRunnerName');
+          const el2 = document.getElementById('textTabRunnerName');
+          if (el1) el1.value = v;
+          if (el2) el2.value = v;
+        }
       });
 
-      addField('location', 'Location Name', state.config.locationName || overrides.header.location, 'Location name', (v) => {
-        state.config.locationName = v;
-        overrides.header.location = v;
-        const el1 = document.getElementById('inputLocationName');
-        const el2 = document.getElementById('textTabLocationName');
-        if (el1) el1.value = v;
-        if (el2) el2.value = v;
+      const defLoc = targetKey === 'header' ? (state.config.locationName || 'Location name') : 'Location name';
+      addField('location', 'Location Name', curOverrides.location || defLoc, 'Location name', (v) => {
+        curOverrides.location = v;
+        if (targetKey === 'header') {
+          state.config.locationName = v;
+          const el1 = document.getElementById('inputLocationName');
+          const el2 = document.getElementById('textTabLocationName');
+          if (el1) el1.value = v;
+          if (el2) el2.value = v;
+        }
       });
 
-      addField('weather', 'Weather Information', state.config.weatherText || overrides.header.weather, '18°C ☀️ Sunny', (v) => {
-        state.config.weatherText = v;
-        overrides.header.weather = v;
-        const el1 = document.getElementById('inputWeatherText');
-        const el2 = document.getElementById('textTabWeatherText');
-        if (el1) el1.value = v;
-        if (el2) el2.value = v;
+      const defWeather = targetKey === 'header' ? (state.config.weatherText || '18°C ☀️ Sunny') : '18°C ☀️ Sunny';
+      addField('weather', 'Weather Information', curOverrides.weather || defWeather, '18°C ☀️ Sunny', (v) => {
+        curOverrides.weather = v;
+        if (targetKey === 'header') {
+          state.config.weatherText = v;
+          const el1 = document.getElementById('inputWeatherText');
+          const el2 = document.getElementById('textTabWeatherText');
+          if (el1) el1.value = v;
+          if (el2) el2.value = v;
+        }
       });
 
       // Template-specific text elements (Magazine Cover, Cyber, Stamp, HUD Flight, etc.)
       if (curHdrTmpl === 'magazine-cover') {
-        addField('tagline', 'Headline Cover Tagline', overrides.header.tagline, "// RUNNER'S LOG — ISSUE 2026 //", (v) => {
-          overrides.header.tagline = v;
+        addField('tagline', 'Headline Cover Tagline', curOverrides.tagline, "// RUNNER'S LOG — ISSUE 2026 //", (v) => {
+          curOverrides.tagline = v;
         });
-        addField('athletePrefix', 'Athlete Prefix Label', overrides.header.athletePrefix, 'ATHLETE:', (v) => {
-          overrides.header.athletePrefix = v;
+        addField('athletePrefix', 'Athlete Prefix Label', curOverrides.athletePrefix, 'ATHLETE:', (v) => {
+          curOverrides.athletePrefix = v;
         });
       } else if (curHdrTmpl === 'retro-cyber') {
-        addField('sysPrompt', 'Cyber System Prompt', overrides.header.sysPrompt, '[ SYS.RUN ]', (v) => {
-          overrides.header.sysPrompt = v;
+        addField('sysPrompt', 'Cyber System Prompt', curOverrides.sysPrompt, '[ SYS.RUN ]', (v) => {
+          curOverrides.sysPrompt = v;
         });
-        addField('onlineStatus', 'Cyber Online Status Tag', overrides.header.onlineStatus, '● ONLINE [OK]', (v) => {
-          overrides.header.onlineStatus = v;
+        addField('onlineStatus', 'Cyber Online Status Tag', curOverrides.onlineStatus, '● ONLINE [OK]', (v) => {
+          curOverrides.onlineStatus = v;
         });
       } else if (curHdrTmpl === 'minimalist-stamp') {
-        addField('stampBadge', 'Passport Stamp Top Badge', overrides.header.stampBadge, '★ OFFICIAL ATHLETIC ENTRY ★', (v) => {
-          overrides.header.stampBadge = v;
+        addField('stampBadge', 'Passport Stamp Top Badge', curOverrides.stampBadge, '★ OFFICIAL ATHLETIC ENTRY ★', (v) => {
+          curOverrides.stampBadge = v;
         });
-        addField('sealTop', 'Circular Seal Top Text', overrides.header.sealTop, 'RUN', (v) => {
-          overrides.header.sealTop = v;
+        addField('sealTop', 'Circular Seal Top Text', curOverrides.sealTop, 'RUN', (v) => {
+          curOverrides.sealTop = v;
         });
-        addField('sealBottom', 'Circular Seal Bottom Text', overrides.header.sealBottom, 'STAMP', (v) => {
-          overrides.header.sealBottom = v;
+        addField('sealBottom', 'Circular Seal Bottom Text', curOverrides.sealBottom, 'STAMP', (v) => {
+          curOverrides.sealBottom = v;
         });
       } else if (curHdrTmpl === 'hud-flight') {
-        addField('flightPrompt', 'Flight Telemetry Tag', overrides.header.flightPrompt, '▲ RUN_TELEMETRY', (v) => {
-          overrides.header.flightPrompt = v;
+        addField('flightPrompt', 'Flight Telemetry Tag', curOverrides.flightPrompt, '▲ RUN_TELEMETRY', (v) => {
+          curOverrides.flightPrompt = v;
         });
-        addField('flightStatus', 'GPS Lock Status Tag', overrides.header.flightStatus, 'GPS LOCK: 100%', (v) => {
-          overrides.header.flightStatus = v;
+        addField('flightStatus', 'GPS Lock Status Tag', curOverrides.flightStatus, 'GPS LOCK: 100%', (v) => {
+          curOverrides.flightStatus = v;
         });
       } else if (curHdrTmpl === 'running-bib-header') {
-        addField('bibPrefix', 'Race Bib Prefix Tag', overrides.header.bibPrefix, 'BIB #4219 // ATHLETE:', (v) => {
-          overrides.header.bibPrefix = v;
+        addField('bibPrefix', 'Race Bib Prefix Tag', curOverrides.bibPrefix, 'BIB #4219 // ATHLETE:', (v) => {
+          curOverrides.bibPrefix = v;
         });
       } else if (curHdrTmpl === 'broadcast-lowerthird') {
-        addField('finishBadge', 'Broadcast Badge', overrides.header.finishBadge, 'FINISH', (v) => {
-          overrides.header.finishBadge = v;
+        addField('finishBadge', 'Broadcast Badge', curOverrides.finishBadge, 'FINISH', (v) => {
+          curOverrides.finishBadge = v;
         });
       } else if (curHdrTmpl === 'badge-shield') {
-        addField('shieldIcon', 'Shield Badge Icon', overrides.header.shieldIcon, '🏆', (v) => {
-          overrides.header.shieldIcon = v;
+        addField('shieldIcon', 'Shield Badge Icon', curOverrides.shieldIcon, '🏆', (v) => {
+          curOverrides.shieldIcon = v;
         });
       } else if (curHdrTmpl === 'pill') {
-        addField('pillIcon', 'Glass Pill Icon', overrides.header.pillIcon, '🏃', (v) => {
-          overrides.header.pillIcon = v;
+        addField('pillIcon', 'Glass Pill Icon', curOverrides.pillIcon, '🏃', (v) => {
+          curOverrides.pillIcon = v;
         });
       } else if (curHdrTmpl === 'athletic') {
-        addField('hudChip', 'Athletic HUD Chip', overrides.header.hudChip, '⚡ RUN HUD', (v) => {
-          overrides.header.hudChip = v;
+        addField('hudChip', 'Athletic HUD Chip', curOverrides.hudChip, '⚡ RUN HUD', (v) => {
+          curOverrides.hudChip = v;
         });
       } else if (curHdrTmpl === 'architect-monolith') {
-        addField('dayNum', 'Calendar Day Number', overrides.header.dayNum, '15', (v) => {
-          overrides.header.dayNum = v;
+        addField('dayNum', 'Calendar Day Number', curOverrides.dayNum, '15', (v) => {
+          curOverrides.dayNum = v;
         });
-        addField('monthStr', 'Calendar Month String', overrides.header.monthStr, 'OCT', (v) => {
-          overrides.header.monthStr = v;
+        addField('monthStr', 'Calendar Month String', curOverrides.monthStr, 'OCT', (v) => {
+          curOverrides.monthStr = v;
         });
       } else if (curHdrTmpl === 'circular-monogram') {
-        addField('monogram', 'Monogram Letters', overrides.header.monogram, 'RN', (v) => {
-          overrides.header.monogram = v;
+        addField('monogram', 'Monogram Letters', curOverrides.monogram, 'RN', (v) => {
+          curOverrides.monogram = v;
         });
       }
-    } else if (targetKey === 'hero') {
-      const curHeroTmpl = state.config.heroDesign || 'mega';
+    } else if (cat === 'hero') {
+      const curHeroTmpl = instOpts.heroDesign || state.config.heroDesign || 'mega';
 
-      addField('label', 'Metric Category Label', overrides.hero.label, 'DISTANCE', (v) => {
-        overrides.hero.label = v;
-        const el = document.getElementById('textTabHeroLabel');
-        if (el) el.value = v;
+      addField('label', 'Metric Category Label', curOverrides.label, 'DISTANCE', (v) => {
+        curOverrides.label = v;
+        if (targetKey === 'hero') {
+          const el = document.getElementById('textTabHeroLabel');
+          if (el) el.value = v;
+        }
       });
-      addField('val', 'Value Override', overrides.hero.value, 'Auto-calculated (or custom)', (v) => {
-        overrides.hero.value = v;
-        const el = document.getElementById('textTabHeroValue');
-        if (el) el.value = v;
+      addField('val', 'Value Override', curOverrides.value, 'Auto-calculated (or custom)', (v) => {
+        curOverrides.value = v;
+        if (targetKey === 'hero') {
+          const el = document.getElementById('textTabHeroValue');
+          if (el) el.value = v;
+        }
       });
-      addField('unit', 'Metric Unit', overrides.hero.unit, 'KM', (v) => {
-        overrides.hero.unit = v;
-        const el = document.getElementById('textTabHeroUnit');
-        if (el) el.value = v;
+      addField('unit', 'Metric Unit', curOverrides.unit, 'KM', (v) => {
+        curOverrides.unit = v;
+        if (targetKey === 'hero') {
+          const el = document.getElementById('textTabHeroUnit');
+          if (el) el.value = v;
+        }
       });
-      addField('sec', 'Secondary / Sub-Metric', overrides.hero.secondary, 'GPS TRACKED', (v) => {
-        overrides.hero.secondary = v;
+      addField('sec', 'Secondary / Sub-Metric', curOverrides.secondary, 'GPS TRACKED', (v) => {
+        curOverrides.secondary = v;
       });
 
       if (curHeroTmpl === 'boxed-bracket') {
-        addField('statusBadge', 'Status Badge Tag', overrides.hero.statusBadge, 'GPS ACTIVE // METRIC', (v) => {
-          overrides.hero.statusBadge = v;
+        addField('statusBadge', 'Status Badge Tag', curOverrides.statusBadge, 'GPS ACTIVE // METRIC', (v) => {
+          curOverrides.statusBadge = v;
         });
       } else if (curHeroTmpl === 'stacked-duo') {
-        addField('runnerStatBadge', 'Sub-Bar Banner Tag', overrides.hero.runnerStatBadge, '⚡ RUN TRACKER OFFICIAL STAT', (v) => {
-          overrides.hero.runnerStatBadge = v;
+        addField('runnerStatBadge', 'Sub-Bar Banner Tag', curOverrides.runnerStatBadge, '⚡ RUN TRACKER OFFICIAL STAT', (v) => {
+          curOverrides.runnerStatBadge = v;
         });
       } else if (curHeroTmpl === 'cyber-glass') {
-        addField('liveDataBadge', 'Cyber Live Data Badge', overrides.hero.liveDataBadge, '● LIVE_DATA', (v) => {
-          overrides.hero.liveDataBadge = v;
+        addField('liveDataBadge', 'Cyber Live Data Badge', curOverrides.liveDataBadge, '● LIVE_DATA', (v) => {
+          curOverrides.liveDataBadge = v;
         });
       } else if (curHeroTmpl === 'racing-bib') {
-        addField('bibBanner', 'Race Bib Banner Tag', overrides.hero.bibBanner, '★ OFFICIAL RACE SPLIT ★', (v) => {
-          overrides.hero.bibBanner = v;
+        addField('bibBanner', 'Race Bib Banner Tag', curOverrides.bibBanner, '★ OFFICIAL RACE SPLIT ★', (v) => {
+          curOverrides.bibBanner = v;
         });
       } else if (curHeroTmpl === 'digital-lcd') {
-        addField('lcdHeader', 'Stopwatch LCD Header', overrides.hero.lcdHeader, '[ DIGITAL TIMER ]', (v) => {
-          overrides.hero.lcdHeader = v;
+        addField('lcdHeader', 'Stopwatch LCD Header', curOverrides.lcdHeader, '[ DIGITAL TIMER ]', (v) => {
+          curOverrides.lcdHeader = v;
         });
       } else if (curHeroTmpl === 'tactical-crosshair') {
-        addField('tacticalSys', 'Tactical System Tag', overrides.hero.tacticalSys, '+ SYS // OPTIC', (v) => {
-          overrides.hero.tacticalSys = v;
+        addField('tacticalSys', 'Tactical System Tag', curOverrides.tacticalSys, '+ SYS // OPTIC', (v) => {
+          curOverrides.tacticalSys = v;
         });
-        addField('tacticalStatus', 'Tactical Status Readout', overrides.hero.tacticalStatus, 'STATUS: LOCKED', (v) => {
-          overrides.hero.tacticalStatus = v;
+        addField('tacticalStatus', 'Tactical Status Readout', curOverrides.tacticalStatus, 'STATUS: LOCKED', (v) => {
+          curOverrides.tacticalStatus = v;
         });
       }
-    } else if (targetKey === 'splits') {
-      addField('title', 'Split Widget Title', state.config.splitCustomTitle || overrides.splits.title, 'SPLITS', (v) => {
-        state.config.splitCustomTitle = v;
-        overrides.splits.title = v;
-        const el = document.getElementById('inputSplitWidgetTitle');
-        if (el) el.value = v;
+    } else if (cat === 'splits') {
+      const defSplitsTitle = targetKey === 'splits' ? (state.config.splitCustomTitle || 'SPLITS') : 'SPLITS';
+      addField('title', 'Split Widget Title', curOverrides.title || defSplitsTitle, 'SPLITS', (v) => {
+        curOverrides.title = v;
+        if (targetKey === 'splits') {
+          state.config.splitCustomTitle = v;
+          const el = document.getElementById('inputSplitWidgetTitle');
+          if (el) el.value = v;
+        }
       });
-      addField('badge', 'Fastest Split Pill Badge', overrides.splits.badge, 'FASTEST', (v) => {
-        overrides.splits.badge = v;
+      addField('badge', 'Fastest Split Pill Badge', curOverrides.badge, 'FASTEST', (v) => {
+        curOverrides.badge = v;
       });
-      addField('headerSplit', 'Column Header: Split', overrides.splits.headerSplit, 'SPLIT', (v) => {
-        overrides.splits.headerSplit = v;
-        const el = document.getElementById('textTabSplitHeaderSplit');
-        if (el) el.value = v;
+      addField('headerSplit', 'Column Header: Split', curOverrides.headerSplit, 'SPLIT', (v) => {
+        curOverrides.headerSplit = v;
+        if (targetKey === 'splits') {
+          const el = document.getElementById('textTabSplitHeaderSplit');
+          if (el) el.value = v;
+        }
       });
-      addField('headerTime', 'Column Header: Time', overrides.splits.headerTime, 'TIME', (v) => {
-        overrides.splits.headerTime = v;
-        const el = document.getElementById('textTabSplitHeaderTime');
-        if (el) el.value = v;
+      addField('headerTime', 'Column Header: Time', curOverrides.headerTime, 'TIME', (v) => {
+        curOverrides.headerTime = v;
+        if (targetKey === 'splits') {
+          const el = document.getElementById('textTabSplitHeaderTime');
+          if (el) el.value = v;
+        }
       });
-      addField('headerPace', 'Column Header: Pace', overrides.splits.headerPace, 'PACE', (v) => {
-        overrides.splits.headerPace = v;
-        const el = document.getElementById('textTabSplitHeaderPace');
-        if (el) el.value = v;
+      addField('headerPace', 'Column Header: Pace', curOverrides.headerPace, 'PACE', (v) => {
+        curOverrides.headerPace = v;
+        if (targetKey === 'splits') {
+          const el = document.getElementById('textTabSplitHeaderPace');
+          if (el) el.value = v;
+        }
       });
-      addField('headerDelta', 'Column Header: +/- Delta', overrides.splits.headerDelta, '+/-', (v) => {
-        overrides.splits.headerDelta = v;
-        const el = document.getElementById('textTabSplitHeaderDelta');
-        if (el) el.value = v;
+      addField('headerDelta', 'Column Header: +/- Delta', curOverrides.headerDelta, '+/-', (v) => {
+        curOverrides.headerDelta = v;
+        if (targetKey === 'splits') {
+          const el = document.getElementById('textTabSplitHeaderDelta');
+          if (el) el.value = v;
+        }
       });
-      addField('headerHr', 'Column Header: Avg HR', overrides.splits.headerHr, 'AVG HR', (v) => {
-        overrides.splits.headerHr = v;
-        const el = document.getElementById('textTabSplitHeaderHr');
-        if (el) el.value = v;
+      addField('headerHr', 'Column Header: Avg HR', curOverrides.headerHr, 'AVG HR', (v) => {
+        curOverrides.headerHr = v;
+        if (targetKey === 'splits') {
+          const el = document.getElementById('textTabSplitHeaderHr');
+          if (el) el.value = v;
+        }
       });
-      addField('headerElev', 'Column Header: Elevation', overrides.splits.headerElev, 'ELEV', (v) => {
-        overrides.splits.headerElev = v;
-        const el = document.getElementById('textTabSplitHeaderElev');
-        if (el) el.value = v;
+      addField('headerElev', 'Column Header: Elevation', curOverrides.headerElev, 'ELEV', (v) => {
+        curOverrides.headerElev = v;
+        if (targetKey === 'splits') {
+          const el = document.getElementById('textTabSplitHeaderElev');
+          if (el) el.value = v;
+        }
       });
-    } else if (targetKey === 'splitHighlight') {
-      const curSHTmpl = state.config.splitHighlightDesign || 'spotlight';
+    } else if (cat === 'splitHighlight') {
+      const curSHTmpl = instOpts.splitHighlightDesign || state.config.splitHighlightDesign || 'spotlight';
 
-      addField('title', 'Spotlight Card Title', overrides.splitHighlight.title, 'FASTEST SPLIT', (v) => {
-        overrides.splitHighlight.title = v;
+      addField('title', 'Spotlight Card Title', curOverrides.title, 'FASTEST SPLIT', (v) => {
+        curOverrides.title = v;
       });
-      addField('label', 'Split KM Label', overrides.splitHighlight.label, 'KM 5', (v) => {
-        overrides.splitHighlight.label = v;
+      addField('label', 'Split KM Label', curOverrides.label, 'KM 5', (v) => {
+        curOverrides.label = v;
       });
-      addField('val', 'Pace / Time Readout', overrides.splitHighlight.pace || overrides.splitHighlight.val, '4:12 /km', (v) => {
-        overrides.splitHighlight.pace = v;
-        overrides.splitHighlight.val = v;
+      addField('val', 'Pace / Time Readout', curOverrides.pace || curOverrides.val, '4:12 /km', (v) => {
+        curOverrides.pace = v;
+        curOverrides.val = v;
       });
-      addField('note', 'Subtitle / Comparison Note', overrides.splitHighlight.note, '+12s faster than average', (v) => {
-        overrides.splitHighlight.note = v;
+      addField('note', 'Subtitle / Comparison Note', curOverrides.note, '+12s faster than average', (v) => {
+        curOverrides.note = v;
       });
 
       if (curSHTmpl === 'leaderboard') {
-        addField('trophyBanner', 'Trophy Banner Tag', overrides.splitHighlight.trophyBanner, '🏆 PERSONAL RECORD', (v) => {
-          overrides.splitHighlight.trophyBanner = v;
+        addField('trophyBanner', 'Trophy Banner Tag', curOverrides.trophyBanner, '🏆 PERSONAL RECORD', (v) => {
+          curOverrides.trophyBanner = v;
         });
       } else if (curSHTmpl === 'cyber') {
-        addField('termPrompt', 'Terminal Prompt Tag', overrides.splitHighlight.termPrompt, '> QUERY: FASTEST_SPLIT', (v) => {
-          overrides.splitHighlight.termPrompt = v;
+        addField('termPrompt', 'Terminal Prompt Tag', curOverrides.termPrompt, '> QUERY: FASTEST_SPLIT', (v) => {
+          curOverrides.termPrompt = v;
         });
       }
-    } else if (targetKey === 'metrics') {
-      addField('distance', 'Distance Label', state.config.labelDistance || overrides.metrics.distance, 'DISTANCE', (v) => {
-        state.config.labelDistance = v;
-        overrides.metrics.distance = v;
-        const el = document.getElementById('customLabelDistance');
-        if (el) el.value = v;
+    } else if (cat === 'metrics') {
+      addField('distance', 'Distance Label', curOverrides.distance || (targetKey === 'metrics' ? state.config.labelDistance : '') || 'DISTANCE', 'DISTANCE', (v) => {
+        curOverrides.distance = v;
+        if (targetKey === 'metrics') {
+          state.config.labelDistance = v;
+          const el = document.getElementById('customLabelDistance');
+          if (el) el.value = v;
+        }
       });
-      addField('time', 'Moving Time Label', state.config.labelTime || overrides.metrics.time, 'TIME', (v) => {
-        state.config.labelTime = v;
-        overrides.metrics.time = v;
-        const el = document.getElementById('customLabelTime');
-        if (el) el.value = v;
+      addField('time', 'Moving Time Label', curOverrides.time || (targetKey === 'metrics' ? state.config.labelTime : '') || 'TIME', 'TIME', (v) => {
+        curOverrides.time = v;
+        if (targetKey === 'metrics') {
+          state.config.labelTime = v;
+          const el = document.getElementById('customLabelTime');
+          if (el) el.value = v;
+        }
       });
-      addField('pace', 'Avg Pace Label', state.config.labelPace || overrides.metrics.pace, 'AVG PACE', (v) => {
-        state.config.labelPace = v;
-        overrides.metrics.pace = v;
-        const el = document.getElementById('customLabelPace');
-        if (el) el.value = v;
+      addField('pace', 'Avg Pace Label', curOverrides.pace || (targetKey === 'metrics' ? state.config.labelPace : '') || 'AVG PACE', 'AVG PACE', (v) => {
+        curOverrides.pace = v;
+        if (targetKey === 'metrics') {
+          state.config.labelPace = v;
+          const el = document.getElementById('customLabelPace');
+          if (el) el.value = v;
+        }
       });
-      addField('hr', 'Avg HR Label', state.config.labelHr || overrides.metrics.hr, 'AVG HR', (v) => {
-        state.config.labelHr = v;
-        overrides.metrics.hr = v;
-        const el = document.getElementById('customLabelHr');
-        if (el) el.value = v;
+      addField('hr', 'Avg HR Label', curOverrides.hr || (targetKey === 'metrics' ? state.config.labelHr : '') || 'AVG HR', 'AVG HR', (v) => {
+        curOverrides.hr = v;
+        if (targetKey === 'metrics') {
+          state.config.labelHr = v;
+          const el = document.getElementById('customLabelHr');
+          if (el) el.value = v;
+        }
       });
-      addField('elevation', 'Elevation Gain Label', state.config.labelElevation || overrides.metrics.elevation, 'ELEV GAIN', (v) => {
-        state.config.labelElevation = v;
-        overrides.metrics.elevation = v;
-        const el = document.getElementById('customLabelElevation');
-        if (el) el.value = v;
+      addField('elevation', 'Elevation Gain Label', curOverrides.elevation || (targetKey === 'metrics' ? state.config.labelElevation : '') || 'ELEV GAIN', 'ELEV GAIN', (v) => {
+        curOverrides.elevation = v;
+        if (targetKey === 'metrics') {
+          state.config.labelElevation = v;
+          const el = document.getElementById('customLabelElevation');
+          if (el) el.value = v;
+        }
       });
-      addField('cadence', 'Cadence Label', state.config.labelCadence || overrides.metrics.cadence, 'CADENCE', (v) => {
-        state.config.labelCadence = v;
-        overrides.metrics.cadence = v;
-        const el = document.getElementById('customLabelCadence');
-        if (el) el.value = v;
+      addField('cadence', 'Cadence Label', curOverrides.cadence || (targetKey === 'metrics' ? state.config.labelCadence : '') || 'CADENCE', 'CADENCE', (v) => {
+        curOverrides.cadence = v;
+        if (targetKey === 'metrics') {
+          state.config.labelCadence = v;
+          const el = document.getElementById('customLabelCadence');
+          if (el) el.value = v;
+        }
       });
-      addField('calories', 'Calories Label', state.config.labelCalories || overrides.metrics.calories, 'CALORIES', (v) => {
-        state.config.labelCalories = v;
-        overrides.metrics.calories = v;
-        const el = document.getElementById('customLabelCalories');
-        if (el) el.value = v;
+      addField('calories', 'Calories Label', curOverrides.calories || (targetKey === 'metrics' ? state.config.labelCalories : '') || 'CALORIES', 'CALORIES', (v) => {
+        curOverrides.calories = v;
+        if (targetKey === 'metrics') {
+          state.config.labelCalories = v;
+          const el = document.getElementById('customLabelCalories');
+          if (el) el.value = v;
+        }
       });
-      addField('bestPace', 'Best Pace Label', state.config.labelBestPace || overrides.metrics.bestPace, 'BEST PACE', (v) => {
-        state.config.labelBestPace = v;
-        overrides.metrics.bestPace = v;
+      addField('bestPace', 'Best Pace Label', curOverrides.bestPace || (targetKey === 'metrics' ? state.config.labelBestPace : '') || 'BEST PACE', 'BEST PACE', (v) => {
+        curOverrides.bestPace = v;
+        if (targetKey === 'metrics') {
+          state.config.labelBestPace = v;
+        }
       });
-    } else if (targetKey === 'paceGraph') {
-      const curPaceTmpl = state.config.paceGraphDesign || 'area';
-      addField('title', 'Pace Graph Title', overrides.paceGraph.title, 'PACE PROFILE', (v) => {
-        overrides.paceGraph.title = v;
-        const el = document.getElementById('textTabPaceGraphTitle');
-        if (el) el.value = v;
+    } else if (cat === 'paceGraph') {
+      const curPaceTmpl = instOpts.paceGraphDesign || state.config.paceGraphDesign || 'area';
+      addField('title', 'Pace Graph Title', curOverrides.title, 'PACE PROFILE', (v) => {
+        curOverrides.title = v;
+        if (targetKey === 'paceGraph') {
+          const el = document.getElementById('textTabPaceGraphTitle');
+          if (el) el.value = v;
+        }
       });
-      addField('stat', 'Pace Stat Pill Readout', overrides.paceGraph.stat, 'BEST: 4:02', (v) => {
-        overrides.paceGraph.stat = v;
+      addField('stat', 'Pace Stat Pill Readout', curOverrides.stat, 'BEST: 4:02', (v) => {
+        curOverrides.stat = v;
       });
-      addField('min', 'Min Pace Label', overrides.paceGraph.min, 'MIN', (v) => {
-        overrides.paceGraph.min = v;
+      addField('min', 'Min Pace Label', curOverrides.min, 'MIN', (v) => {
+        curOverrides.min = v;
       });
-      addField('avg', 'Avg Pace Label', overrides.paceGraph.avg, 'AVG', (v) => {
-        overrides.paceGraph.avg = v;
+      addField('avg', 'Avg Pace Label', curOverrides.avg, 'AVG', (v) => {
+        curOverrides.avg = v;
       });
-      addField('max', 'Max Pace Label', overrides.paceGraph.max, 'MAX', (v) => {
-        overrides.paceGraph.max = v;
+      addField('max', 'Max Pace Label', curOverrides.max, 'MAX', (v) => {
+        curOverrides.max = v;
       });
       if (curPaceTmpl === 'cyber-pulse') {
-        addField('speedPulseTag', 'Speed Pulse HUD Tag', overrides.paceGraph.speedPulseTag, '⚡ SPEED_PULSE', (v) => {
-          overrides.paceGraph.speedPulseTag = v;
+        addField('speedPulseTag', 'Speed Pulse HUD Tag', curOverrides.speedPulseTag, '⚡ SPEED_PULSE', (v) => {
+          curOverrides.speedPulseTag = v;
         });
       }
-    } else if (targetKey === 'hrGraph') {
-      const curHrTmpl = state.config.hrGraphDesign || 'filled-area';
-      addField('title', 'HR Graph Title', overrides.hrGraph.title, 'HEART RATE ZONES', (v) => {
-        overrides.hrGraph.title = v;
-        const el = document.getElementById('textTabHrGraphTitle');
-        if (el) el.value = v;
+    } else if (cat === 'hrGraph') {
+      const curHrTmpl = instOpts.hrGraphDesign || state.config.hrGraphDesign || 'filled-area';
+      addField('title', 'HR Graph Title', curOverrides.title, 'HEART RATE ZONES', (v) => {
+        curOverrides.title = v;
+        if (targetKey === 'hrGraph') {
+          const el = document.getElementById('textTabHrGraphTitle');
+          if (el) el.value = v;
+        }
       });
-      addField('stat', 'HR Stat Pill Readout', overrides.hrGraph.stat, 'PEAK: 178 BPM', (v) => {
-        overrides.hrGraph.stat = v;
+      addField('stat', 'HR Stat Pill Readout', curOverrides.stat, 'PEAK: 178 BPM', (v) => {
+        curOverrides.stat = v;
       });
-      addField('min', 'Min HR Label', overrides.hrGraph.min, 'MIN', (v) => {
-        overrides.hrGraph.min = v;
+      addField('min', 'Min HR Label', curOverrides.min, 'MIN', (v) => {
+        curOverrides.min = v;
       });
-      addField('avg', 'Avg HR Label', overrides.hrGraph.avg, 'AVG', (v) => {
-        overrides.hrGraph.avg = v;
+      addField('avg', 'Avg HR Label', curOverrides.avg, 'AVG', (v) => {
+        curOverrides.avg = v;
       });
-      addField('max', 'Max HR Label', overrides.hrGraph.max, 'MAX', (v) => {
-        overrides.hrGraph.max = v;
+      addField('max', 'Max HR Label', curOverrides.max, 'MAX', (v) => {
+        curOverrides.max = v;
       });
       if (curHrTmpl === 'centered-cardiac-halo') {
-        addField('cardiacHaloTag', 'Cardiac Halo Tag', overrides.hrGraph.cardiacHaloTag, '❤️ CARDIAC', (v) => {
-          overrides.hrGraph.cardiacHaloTag = v;
+        addField('cardiacHaloTag', 'Cardiac Halo Tag', curOverrides.cardiacHaloTag, '❤️ CARDIAC', (v) => {
+          curOverrides.cardiacHaloTag = v;
         });
       }
-    } else if (targetKey === 'elevation') {
-      const curElevTmpl = state.config.elevationDesign || 'area';
-      addField('title', 'Elevation Profile Title', overrides.elevation.title, 'ELEVATION PROFILE', (v) => {
-        overrides.elevation.title = v;
-        const el = document.getElementById('textTabElevationTitle');
-        if (el) el.value = v;
+    } else if (cat === 'elevation') {
+      const curElevTmpl = instOpts.elevationDesign || state.config.elevationDesign || 'area';
+      addField('title', 'Elevation Profile Title', curOverrides.title, 'ELEVATION PROFILE', (v) => {
+        curOverrides.title = v;
+        if (targetKey === 'elevation') {
+          const el = document.getElementById('textTabElevationTitle');
+          if (el) el.value = v;
+        }
       });
-      addField('stat', 'Elevation Stat Pill', overrides.elevation.stat, '+210m GAIN', (v) => {
-        overrides.elevation.stat = v;
+      addField('stat', 'Elevation Stat Pill', curOverrides.stat, '+210m GAIN', (v) => {
+        curOverrides.stat = v;
       });
-      addField('min', 'Min Elevation Label', overrides.elevation.min, 'MIN 0m', (v) => {
-        overrides.elevation.min = v;
+      addField('min', 'Min Elevation Label', curOverrides.min, 'MIN 0m', (v) => {
+        curOverrides.min = v;
       });
-      addField('max', 'Max Elevation Label', overrides.elevation.max, 'MAX 150m', (v) => {
-        overrides.elevation.max = v;
+      addField('max', 'Max Elevation Label', curOverrides.max, 'MAX 150m', (v) => {
+        curOverrides.max = v;
       });
-      addField('gain', 'Total Gain Label', overrides.elevation.gain, 'GAIN +210m', (v) => {
-        overrides.elevation.gain = v;
+      addField('gain', 'Total Gain Label', curOverrides.gain, 'GAIN +210m', (v) => {
+        curOverrides.gain = v;
       });
       if (curElevTmpl === 'contour') {
-        addField('summitBadge', 'Summit Badge Tag', overrides.elevation.summitBadge, '▲ SUMMIT: 150m', (v) => {
-          overrides.elevation.summitBadge = v;
+        addField('summitBadge', 'Summit Badge Tag', curOverrides.summitBadge, '▲ SUMMIT: 150m', (v) => {
+          curOverrides.summitBadge = v;
         });
       }
-    } else if (targetKey === 'hrBadge') {
-      addField('label', 'Badge Label', overrides.hrBadge.label, 'AVG HEART RATE', (v) => {
-        overrides.hrBadge.label = v;
-        const el = document.getElementById('textTabHrBadgeLabel');
-        if (el) el.value = v;
+    } else if (cat === 'hrBadge') {
+      addField('label', 'Badge Label', curOverrides.label, 'AVG HEART RATE', (v) => {
+        curOverrides.label = v;
+        if (targetKey === 'hrBadge') {
+          const el = document.getElementById('textTabHrBadgeLabel');
+          if (el) el.value = v;
+        }
       });
-      addField('unit', 'Unit', overrides.hrBadge.unit, 'BPM', (v) => {
-        overrides.hrBadge.unit = v;
-        const el = document.getElementById('textTabHrBadgeUnit');
-        if (el) el.value = v;
+      addField('unit', 'Unit', curOverrides.unit, 'BPM', (v) => {
+        curOverrides.unit = v;
+        if (targetKey === 'hrBadge') {
+          const el = document.getElementById('textTabHrBadgeUnit');
+          if (el) el.value = v;
+        }
       });
-      addField('peak', 'Peak HR Summary', overrides.hrBadge.peak, 'MAX 178 BPM', (v) => {
-        overrides.hrBadge.peak = v;
+      addField('peak', 'Peak HR Summary', curOverrides.peak, 'MAX 178 BPM', (v) => {
+        curOverrides.peak = v;
       });
-      addField('zone', 'Zone / Intensity Tag', overrides.hrBadge.zone, 'THRESHOLD / ZONE 4', (v) => {
-        overrides.hrBadge.zone = v;
+      addField('zone', 'Zone / Intensity Tag', curOverrides.zone, 'THRESHOLD / ZONE 4', (v) => {
+        curOverrides.zone = v;
       });
-    } else if (targetKey === 'hrZones') {
-      addField('title', 'Zones Title', overrides.hrZones.title, 'HEART RATE ZONES', (v) => {
-        overrides.hrZones.title = v;
+    } else if (cat === 'hrZones') {
+      addField('title', 'Zones Title', curOverrides.title, 'HEART RATE ZONES', (v) => {
+        curOverrides.title = v;
       });
-      addField('z1', 'Zone 1 Label', overrides.hrZones.z1, 'Z1 Easy', (v) => { overrides.hrZones.z1 = v; });
-      addField('z2', 'Zone 2 Label', overrides.hrZones.z2, 'Z2 Aerobic', (v) => { overrides.hrZones.z2 = v; });
-      addField('z3', 'Zone 3 Label', overrides.hrZones.z3, 'Z3 Tempo', (v) => { overrides.hrZones.z3 = v; });
-      addField('z4', 'Zone 4 Label', overrides.hrZones.z4, 'Z4 Threshold', (v) => { overrides.hrZones.z4 = v; });
-      addField('z5', 'Zone 5 Label', overrides.hrZones.z5, 'Z5 Anaerobic', (v) => { overrides.hrZones.z5 = v; });
-    } else if (targetKey === 'brand') {
-      addField('text', 'Brand / Watermark Text', state.config.customWatermark || overrides.brand.text, '⚡ RUNOVERLAY', (v) => {
-        state.config.customWatermark = v;
-        overrides.brand.text = v;
-        const el1 = document.getElementById('textTabWatermark');
-        const el2 = document.getElementById('textTabBrandWatermarkText');
-        if (el1) el1.value = v;
-        if (el2) el2.value = v;
+      addField('z1', 'Zone 1 Label', curOverrides.z1, 'Z1 Easy', (v) => { curOverrides.z1 = v; });
+      addField('z2', 'Zone 2 Label', curOverrides.z2, 'Z2 Aerobic', (v) => { curOverrides.z2 = v; });
+      addField('z3', 'Zone 3 Label', curOverrides.z3, 'Z3 Tempo', (v) => { curOverrides.z3 = v; });
+      addField('z4', 'Zone 4 Label', curOverrides.z4, 'Z4 Threshold', (v) => { curOverrides.z4 = v; });
+      addField('z5', 'Zone 5 Label', curOverrides.z5, 'Z5 Anaerobic', (v) => { curOverrides.z5 = v; });
+    } else if (cat === 'brand') {
+      const defBrand = targetKey === 'brand' ? (state.config.customWatermark || '⚡ RUNOVERLAY') : '⚡ RUNOVERLAY';
+      addField('text', 'Brand / Watermark Text', curOverrides.text || defBrand, '⚡ RUNOVERLAY', (v) => {
+        curOverrides.text = v;
+        if (targetKey === 'brand') {
+          state.config.customWatermark = v;
+          const el1 = document.getElementById('textTabWatermark');
+          const el2 = document.getElementById('textTabBrandWatermarkText');
+          if (el1) el1.value = v;
+          if (el2) el2.value = v;
+        }
       });
-      addField('subtext', 'Sub-brand / Motto', overrides.brand.subtext, '#NeverStopRunning', (v) => {
-        overrides.brand.subtext = v;
+      addField('subtext', 'Sub-brand / Motto', curOverrides.subtext, '#NeverStopRunning', (v) => {
+        curOverrides.subtext = v;
       });
-    } else if (targetKey === 'map') {
-      addField('title', 'Map Title / Tag', overrides.map.title, 'GPS ROUTE', (v) => {
-        overrides.map.title = v;
+    } else if (cat === 'map') {
+      addField('title', 'Map Title / Tag', curOverrides.title, 'GPS ROUTE', (v) => {
+        curOverrides.title = v;
       });
-      addField('caption', 'Polaroid Bottom Caption', overrides.map.caption, 'JAKARTA, INDONESIA', (v) => {
-        overrides.map.caption = v;
+      addField('caption', 'Polaroid Bottom Caption', curOverrides.caption, 'JAKARTA, INDONESIA', (v) => {
+        curOverrides.caption = v;
       });
     } else {
       container.innerHTML = '<div style="font-size:0.75rem; color:var(--text-muted); padding:6px 0;">This graphic element does not have editable text labels.</div>';
@@ -3736,6 +4360,77 @@ function setupElementInspectorControls() {
   elSelect.addEventListener('change', () => {
     window.syncInspectorWithSelectedElement(elSelect.value);
   });
+
+  const inspTmplSelect = document.getElementById('inspectorTemplateSelect');
+  if (inspTmplSelect) {
+    inspTmplSelect.addEventListener('change', (e) => {
+      const targetKey = getActiveKey();
+      const cat = getWidgetCategory(targetKey);
+      const tmplCfg = WIDGET_TEMPLATE_OPTIONS[cat];
+      if (!tmplCfg) return;
+      pushUndoSnapshot();
+      const val = e.target.value;
+      const extraInst = state.config.extraWidgetInstances?.find((w) => w.id === targetKey);
+      if (extraInst) {
+        if (!extraInst.options) extraInst.options = {};
+        extraInst.options[tmplCfg.designKey] = val;
+        if (cat === 'header') {
+          extraInst.options.headerTemplate = val;
+          extraInst.options.headerDesign = val;
+        }
+        window.renderExtraWidgetsUI();
+      } else {
+        state.config[tmplCfg.designKey] = val;
+        if (cat === 'header') {
+          state.config.headerTemplate = val;
+          state.config.headerDesign = val;
+        }
+        if (tmplCfg.mainSelectId) {
+          const mainSel = document.getElementById(tmplCfg.mainSelectId);
+          if (mainSel) mainSel.value = val;
+        }
+      }
+      triggerRender();
+      window.syncInspectorWithSelectedElement(targetKey);
+      showToast(`Set ${extraInst ? extraInst.name : cat} template to ${val}`);
+    });
+  }
+
+  const inspExtraFieldSelect = document.getElementById('inspectorExtraFieldSelect');
+  if (inspExtraFieldSelect) {
+    inspExtraFieldSelect.addEventListener('change', (e) => {
+      const targetKey = getActiveKey();
+      const cat = getWidgetCategory(targetKey);
+      const val = e.target.value;
+      const extraInst = state.config.extraWidgetInstances?.find((w) => w.id === targetKey);
+      pushUndoSnapshot();
+      if (cat === 'hero') {
+        if (extraInst) {
+          if (!extraInst.options) extraInst.options = {};
+          extraInst.options.heroMetric = val;
+          const idx = extraInst.id.split('_')[1] || '2';
+          extraInst.name = `${WIDGET_CATEGORIES.hero.name} #${idx} (${val.toUpperCase()})`;
+          window.renderExtraWidgetsUI();
+          window.refreshInspectorElementDropdown();
+        } else {
+          state.config.heroMetric = val;
+          const sel = document.getElementById('heroMetricSelect');
+          if (sel) sel.value = val;
+        }
+      } else if (cat === 'splitHighlight') {
+        if (extraInst) {
+          if (!extraInst.options) extraInst.options = {};
+          extraInst.options.highlightSplitTarget = val;
+          window.renderExtraWidgetsUI();
+        } else {
+          state.config.highlightSplitTarget = val;
+        }
+      }
+      triggerRender();
+      window.syncInspectorWithSelectedElement(targetKey);
+      showToast(`Updated option to ${val}`);
+    });
+  }
 
   if (fontSelect) {
     fontSelect.addEventListener('change', (e) => {
@@ -4786,6 +5481,10 @@ function setupGizmoController() {
         dragInitialPos = { ...(state.config.widgetPositions[state.selectedWidget] || b) };
       }
       isInteracting = true;
+      if (state.config.snapToGrid) {
+        state.config.isDraggingGrid = true;
+        triggerRender();
+      }
     };
 
     h.addEventListener('mousedown', (e) => {
@@ -4829,38 +5528,48 @@ function setupGizmoController() {
       return;
     }
 
+    const snapVal = (val, size) => {
+      if (!state.config.snapToGrid || !size || size <= 1) return Math.round(val);
+      return Math.round(val / size) * size;
+    };
+    const g = state.config.gridSize || 20;
+
     if (activeDragMode === 'move') {
       if (state.selectedWidget.endsWith('_bg')) {
         const baseKey = state.selectedWidget.replace(/_bg$/, '');
         if (!state.config.widgetBgStyles) state.config.widgetBgStyles = {};
         if (!state.config.widgetBgStyles[baseKey]) state.config.widgetBgStyles[baseKey] = {};
         const cur = state.config.widgetBgStyles[baseKey];
-        cur.offsetX = Math.round(dragInitialPos.offsetX + deltaX);
-        cur.offsetY = Math.round(dragInitialPos.offsetY + deltaY);
+        cur.offsetX = snapVal(dragInitialPos.offsetX + deltaX, g);
+        cur.offsetY = snapVal(dragInitialPos.offsetY + deltaY, g);
+        state.config.isDraggingGrid = state.config.snapToGrid;
         triggerRender();
       } else {
-        const newX = Math.round(dragInitialPos.x + deltaX);
-        const newY = Math.round(dragInitialPos.y + deltaY);
+        const newX = snapVal(dragInitialPos.x + deltaX, g);
+        const newY = snapVal(dragInitialPos.y + deltaY, g);
         state.config.widgetPositions[state.selectedWidget] = {
           ...dragInitialPos,
           x: newX,
           y: newY,
         };
+        state.config.isDraggingGrid = state.config.snapToGrid;
         triggerRender();
       }
     } else if (activeDragMode === 'resize') {
       let { x, y, width, height } = dragInitialPos;
 
-      if (activeHandle.includes('e')) width = Math.max(30, Math.round(dragInitialPos.width + deltaX));
-      if (activeHandle.includes('s')) height = Math.max(20, Math.round(dragInitialPos.height + deltaY));
+      if (activeHandle.includes('e')) width = Math.max(g, snapVal(dragInitialPos.width + deltaX, g));
+      if (activeHandle.includes('s')) height = Math.max(g, snapVal(dragInitialPos.height + deltaY, g));
       if (activeHandle.includes('w')) {
-        const nw = Math.max(30, Math.round(dragInitialPos.width - deltaX));
-        x = dragInitialPos.x + (dragInitialPos.width - nw);
+        const rawW = dragInitialPos.width - deltaX;
+        const nw = Math.max(g, snapVal(rawW, g));
+        x = snapVal(dragInitialPos.x + (dragInitialPos.width - nw), g);
         width = nw;
       }
       if (activeHandle.includes('n')) {
-        const nh = Math.max(20, Math.round(dragInitialPos.height - deltaY));
-        y = dragInitialPos.y + (dragInitialPos.height - nh);
+        const rawH = dragInitialPos.height - deltaY;
+        const nh = Math.max(g, snapVal(rawH, g));
+        y = snapVal(dragInitialPos.y + (dragInitialPos.height - nh), g);
         height = nh;
       }
 
@@ -4878,9 +5587,11 @@ function setupGizmoController() {
         cur.offsetY = Math.round(y - baseY);
         cur.widthDelta = Math.round(width - baseW);
         cur.heightDelta = Math.round(height - baseH);
+        state.config.isDraggingGrid = state.config.snapToGrid;
         triggerRender();
       } else {
         state.config.widgetPositions[state.selectedWidget] = { x, y, width, height };
+        state.config.isDraggingGrid = state.config.snapToGrid;
         triggerRender();
       }
     }
@@ -4891,6 +5602,10 @@ function setupGizmoController() {
       isInteracting = false;
       activeDragMode = null;
       activeHandle = null;
+      if (state.config.isDraggingGrid) {
+        state.config.isDraggingGrid = false;
+        triggerRender();
+      }
     }
   };
 
@@ -4983,6 +5698,10 @@ function startDragMove(clientX, clientY) {
     dragInitialPos = { ...(state.config.widgetPositions[state.selectedWidget] || b) };
   }
   isInteracting = true;
+  if (state.config.snapToGrid) {
+    state.config.isDraggingGrid = true;
+    triggerRender();
+  }
 }
 
 function selectWidget(key) {
@@ -5109,7 +5828,11 @@ function centerWidget(key) {
   const b = renderer.widgetBounds[key];
   if (!b) return;
   const cur = state.config.widgetPositions[key] || b;
-  const newX = Math.round((canvas.width - cur.width) / 2);
+  let newX = Math.round((canvas.width - cur.width) / 2);
+  if (state.config.snapToGrid) {
+    const g = state.config.gridSize || 20;
+    newX = Math.round(newX / g) * g;
+  }
   state.config.widgetPositions[key] = { ...cur, x: newX };
   triggerRender();
   showToast('Centered widget horizontally');

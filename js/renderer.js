@@ -488,6 +488,46 @@ export class OverlayRenderer {
     // 3. Render Custom Texts & Stickers
     this.drawCustomTexts(ctx, baseW, baseH, config.customTexts, theme, accentColor);
 
+    // 4. Render Grid Guidelines (Snap to Grid / Alignment Grid)
+    if (config.snapToGrid && (config.showGridOverlay || config.isDraggingGrid)) {
+      this.drawGridOverlay(ctx, baseW, baseH, config);
+    }
+
+    ctx.restore();
+  }
+
+  drawGridOverlay(ctx, w, h, config) {
+    const gridSize = config.gridSize && config.gridSize >= 2 ? config.gridSize : 20;
+    ctx.save();
+    ctx.lineWidth = 0.6;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+
+    ctx.beginPath();
+    for (let x = gridSize; x < w; x += gridSize) {
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, h);
+    }
+    for (let y = gridSize; y < h; y += gridSize) {
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y);
+    }
+    ctx.stroke();
+
+    if (gridSize <= 30) {
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.16)';
+      ctx.lineWidth = 1.0;
+      const majorStep = gridSize * 5;
+      ctx.beginPath();
+      for (let x = majorStep; x < w; x += majorStep) {
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, h);
+      }
+      for (let y = majorStep; y < h; y += majorStep) {
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y);
+      }
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
@@ -2617,9 +2657,13 @@ export class OverlayRenderer {
       mainVal = activity.avgPaceFormatted.split(' ')[0];
       mainUnit = activity.avgPaceFormatted.split(' ')[1] || '/KM';
       defaultLabel = (activity.isAnimated && activity.progress < 0.999) ? 'CURRENT PACE' : 'AVERAGE PACE';
+    } else if (heroType === 'hr') {
+      mainVal = String(activity.avgHr || (activity.heartrate ? activity.heartrate.avg : 155));
+      mainUnit = 'BPM';
+      defaultLabel = 'AVG HEART RATE';
     }
 
-    const labelKey = heroType === 'time' ? 'Time' : heroType === 'pace' ? 'Pace' : 'Distance';
+    const labelKey = heroType === 'time' ? 'Time' : heroType === 'pace' ? 'Pace' : heroType === 'hr' ? 'HeartRate' : 'Distance';
     let label = this.getMetricLabel(config, labelKey, defaultLabel);
 
     // Apply individual text overrides for hero metric
@@ -5265,13 +5309,20 @@ export class OverlayRenderer {
     if (design === 'pace-table') {
       const tableW = width - padX * 2;
       const headerY = y + 44 + offTable.y;
-      const splitCols = config.splitColumns || { time: true, pace: true, delta: true };
+      const defaultCols = { split: true, time: true, pace: true, delta: true, avgHr: true, maxHr: false, minHr: false, cadence: false, elevation: true };
+      const splitCols = { ...defaultCols, ...(config.splitColumns || {}) };
+
       const colDefs = [
-        { key: 'split', title: this.getTextOverride(config, widgetKey, 'headerSplit', 'SPLIT'), align: 'left', flex: 1.2 },
+        { key: 'split', title: this.getTextOverride(config, widgetKey, 'headerSplit', 'SPLIT'), align: 'left', flex: 1.1 },
       ];
       if (splitCols.time !== false) colDefs.push({ key: 'time', title: this.getTextOverride(config, widgetKey, 'headerTime', 'TIME'), align: 'center', flex: 1.0 });
       if (splitCols.pace !== false) colDefs.push({ key: 'pace', title: this.getTextOverride(config, widgetKey, 'headerPace', 'PACE'), align: 'right', flex: 1.0 });
-      if (splitCols.delta !== false) colDefs.push({ key: 'delta', title: this.getTextOverride(config, widgetKey, 'headerDelta', '+/- DELTA'), align: 'right', flex: 1.0 });
+      if (splitCols.delta) colDefs.push({ key: 'delta', title: this.getTextOverride(config, widgetKey, 'headerDelta', '+/- DELTA'), align: 'right', flex: 0.95 });
+      if (splitCols.avgHr) colDefs.push({ key: 'avgHr', title: this.getTextOverride(config, widgetKey, 'headerHr', 'AVG HR'), align: 'right', flex: 0.9 });
+      if (splitCols.maxHr) colDefs.push({ key: 'maxHr', title: this.getTextOverride(config, widgetKey, 'headerMaxHr', 'MAX HR'), align: 'right', flex: 0.9 });
+      if (splitCols.minHr) colDefs.push({ key: 'minHr', title: this.getTextOverride(config, widgetKey, 'headerMinHr', 'MIN HR'), align: 'right', flex: 0.9 });
+      if (splitCols.cadence) colDefs.push({ key: 'cadence', title: this.getTextOverride(config, widgetKey, 'headerCad', 'CAD'), align: 'right', flex: 0.85 });
+      if (splitCols.elevation) colDefs.push({ key: 'elevation', title: this.getTextOverride(config, widgetKey, 'headerElev', 'ELEV'), align: 'right', flex: 0.9 });
 
       const totalFlex = colDefs.reduce((acc, c) => acc + c.flex, 0);
       let curColX = x + padX;
@@ -5283,8 +5334,11 @@ export class OverlayRenderer {
         return res;
       });
 
+      const headerFontSize = colDefs.length > 6 ? 9 : 10;
+      const cellFontSize = colDefs.length > 6 ? 9.5 : colDefs.length > 4 ? 10 : 11;
+
       ctx.fillStyle = textMuted;
-      ctx.font = this.getSubPartFont(config, widgetKey, 'table', '600', 10);
+      ctx.font = this.getSubPartFont(config, widgetKey, 'table', '600', headerFontSize);
       ctx.letterSpacing = '0.5px';
       computedCols.forEach((col) => {
         ctx.textAlign = col.align;
@@ -5294,6 +5348,7 @@ export class OverlayRenderer {
       const tableStartY = headerY + 12;
       const availableH = chartH - (tableStartY - y) - 8;
       const rowH = Math.min(22, Math.max(14, availableH / count));
+      const isImp = activity.distanceUnit === 'mi';
 
       visibleSplits.forEach((it, idx) => {
         const sOff = this.getSplitItemOffsets(config, widgetKey, idx);
@@ -5307,30 +5362,96 @@ export class OverlayRenderer {
             this.applyZDepth(ctx, sOff.lap.z);
             ctx.textAlign = col.align;
             ctx.fillStyle = sOff.lap.color !== 'default' ? sOff.lap.color : (isFastest ? elAccent : textMuted);
-            ctx.font = this.getSplitFont(config, widgetKey, idx, 'lap', 'bold', 11);
-            ctx.fillText(it.name || it.shortName, col.posX + sOff.lap.x, rowY + sOff.lap.y);
+            ctx.font = this.getSplitFont(config, widgetKey, idx, 'lap', 'bold', cellFontSize);
+            ctx.fillText(it.name || it.shortName || ('Km ' + (idx + 1)), col.posX + sOff.lap.x, rowY + sOff.lap.y);
             ctx.restore();
           } else if (col.key === 'pace' && !sOff.pace.hidden) {
             ctx.save();
             this.applyZDepth(ctx, sOff.pace.z);
             ctx.textAlign = col.align;
             ctx.fillStyle = sOff.pace.color !== 'default' ? sOff.pace.color : (isFastest ? elAccent : text);
-            ctx.font = this.getSplitFont(config, widgetKey, idx, 'pace', 'bold', 11);
-            ctx.fillText(it.paceFormatted.split(' ')[0], col.posX + sOff.pace.x, rowY + sOff.pace.y);
+            ctx.font = this.getSplitFont(config, widgetKey, idx, 'pace', 'bold', cellFontSize);
+            const paceStr = it.paceFormatted ? it.paceFormatted.split(' ')[0] : (it.pace ? (Math.floor(it.pace / 60) + ':' + String(Math.floor(it.pace % 60)).padStart(2, '0')) : '--');
+            ctx.fillText(paceStr, col.posX + sOff.pace.x, rowY + sOff.pace.y);
             ctx.restore();
           } else if (col.key === 'time') {
             ctx.save();
             ctx.textAlign = col.align;
             ctx.fillStyle = text;
-            ctx.font = this.getSubPartFont(config, widgetKey, 'table', '500', 11);
-            ctx.fillText(it.durationFormatted || '--', col.posX, rowY);
+            ctx.font = this.getSubPartFont(config, widgetKey, 'table', '500', cellFontSize);
+            let timeStr = it.timeFormatted || it.durationFormatted;
+            if (!timeStr && it.duration) {
+              const m = Math.floor(it.duration / 60);
+              const s = Math.floor(it.duration % 60);
+              timeStr = `${m}:${String(s).padStart(2, '0')}`;
+            }
+            ctx.fillText(timeStr || '--', col.posX, rowY);
             ctx.restore();
           } else if (col.key === 'delta') {
             ctx.save();
             ctx.textAlign = col.align;
-            ctx.fillStyle = isFastest ? elAccent : textMuted;
-            ctx.font = this.getSubPartFont(config, widgetKey, 'table', 'bold', 11);
-            ctx.fillText(it.deltaFormatted || '--', col.posX, rowY);
+            let deltaStr = it.deltaFormatted;
+            if (!deltaStr && it.pace) {
+              const basePace = activity.avgPace || (items.reduce((acc, s) => acc + (s.pace || 0), 0) / (items.length || 1));
+              if (basePace > 0) {
+                const diff = Math.round(it.pace - basePace);
+                deltaStr = (diff > 0 ? '+' : '') + diff + 's';
+              }
+            }
+            if (!deltaStr) deltaStr = '--';
+            ctx.fillStyle = deltaStr.startsWith('-') ? (elAccent || '#10b981') : isFastest ? elAccent : textMuted;
+            ctx.font = this.getSubPartFont(config, widgetKey, 'table', 'bold', cellFontSize);
+            ctx.fillText(deltaStr, col.posX, rowY);
+            ctx.restore();
+          } else if (col.key === 'avgHr') {
+            ctx.save();
+            ctx.textAlign = col.align;
+            ctx.fillStyle = text;
+            ctx.font = this.getSubPartFont(config, widgetKey, 'table', '500', cellFontSize);
+            const hr = it.avgHr || it.hr || it.heartRate;
+            ctx.fillText(hr ? `${Math.round(hr)}` : '--', col.posX, rowY);
+            ctx.restore();
+          } else if (col.key === 'maxHr') {
+            ctx.save();
+            ctx.textAlign = col.align;
+            ctx.fillStyle = text;
+            ctx.font = this.getSubPartFont(config, widgetKey, 'table', '500', cellFontSize);
+            const maxH = it.maxHr ? Math.round(it.maxHr) : (it.avgHr ? Math.round(it.avgHr * 1.08) : null);
+            ctx.fillText(maxH ? `${maxH}` : '--', col.posX, rowY);
+            ctx.restore();
+          } else if (col.key === 'minHr') {
+            ctx.save();
+            ctx.textAlign = col.align;
+            ctx.fillStyle = text;
+            ctx.font = this.getSubPartFont(config, widgetKey, 'table', '500', cellFontSize);
+            const minH = it.minHr ? Math.round(it.minHr) : (it.avgHr ? Math.round(it.avgHr * 0.9) : null);
+            ctx.fillText(minH ? `${minH}` : '--', col.posX, rowY);
+            ctx.restore();
+          } else if (col.key === 'cadence') {
+            ctx.save();
+            ctx.textAlign = col.align;
+            ctx.fillStyle = text;
+            ctx.font = this.getSubPartFont(config, widgetKey, 'table', '500', cellFontSize);
+            const cad = it.avgCadence || it.cadence || it.cad;
+            ctx.fillText(cad ? `${Math.round(cad)}` : '--', col.posX, rowY);
+            ctx.restore();
+          } else if (col.key === 'elevation') {
+            ctx.save();
+            ctx.textAlign = col.align;
+            ctx.fillStyle = text;
+            ctx.font = this.getSubPartFont(config, widgetKey, 'table', '500', cellFontSize);
+            let elevStr = '--';
+            if (it.elevationGain != null && it.elevationGain !== 0) {
+              const val = isImp ? Math.round(it.elevationGain * 3.28084) : Math.round(it.elevationGain);
+              elevStr = `+${val}${isImp ? 'ft' : 'm'}`;
+            } else if (it.elevationLoss != null && it.elevationLoss !== 0) {
+              const val = isImp ? Math.round(it.elevationLoss * 3.28084) : Math.round(it.elevationLoss);
+              elevStr = `-${val}${isImp ? 'ft' : 'm'}`;
+            } else if (it.elevation != null) {
+              const val = isImp ? Math.round(it.elevation * 3.28084) : Math.round(it.elevation);
+              elevStr = `${val}${isImp ? 'ft' : 'm'}`;
+            }
+            ctx.fillText(elevStr, col.posX, rowY);
             ctx.restore();
           }
         });
@@ -5540,9 +5661,13 @@ export class OverlayRenderer {
 
     if (design === 'horizontal-bars') {
       const isAnim = activity.isAnimated && items.some((it) => it.isCompleted !== undefined);
-      const countH = Math.min(items.length, 6);
-      const rowH = Math.max(20, Math.min(26, Math.floor((chartH - 45) / countH)));
+      const countH = Math.min(items.length, 10);
+      const rowH = Math.max(18, Math.min(26, Math.floor((chartH - 45) / countH)));
       const startY = y + 40;
+
+      const defaultCols = { split: true, time: true, pace: true, delta: true, avgHr: true, maxHr: false, minHr: false, cadence: false, elevation: true };
+      const splitCols = { ...defaultCols, ...(config.splitColumns || {}) };
+      const isImp = activity.distanceUnit === 'mi';
 
       let minPace = Infinity, maxPace = 0;
       items.slice(0, countH).forEach((it) => {
@@ -5560,21 +5685,91 @@ export class OverlayRenderer {
         const ry = startY + idx * rowH + sOff.split.y;
         const isFastest = it.isFastest && showFastest;
 
+        // 1. Lap / Split label on the left
         if (!sOff.lap.hidden) {
           ctx.save();
           this.applyZDepth(ctx, sOff.lap.z);
           ctx.textAlign = 'left';
           ctx.fillStyle = sOff.lap.color !== 'default' ? sOff.lap.color : textMuted;
           ctx.font = this.getSplitFont(config, widgetKey, idx, 'lap', 'bold', 10);
-          ctx.fillText(it.shortName, x + padX + sOff.lap.x, ry + rowH / 2 + 4 + sOff.lap.y);
+          ctx.fillText(it.shortName || `${idx + 1}`, x + padX + sOff.lap.x, ry + rowH / 2 + 4 + sOff.lap.y);
           ctx.restore();
         }
 
-        const barStartX = x + padX + 36;
-        const maxBarW = width - padX * 2 - 96;
-        const paceNorm = Math.max(0.2, Math.min(1, 1 - (it.pace - minPace) / (maxPace - minPace || 1) * 0.75));
+        // 2. Build telemetry tokens for active metrics
+        const tokens = [];
+        if (splitCols.pace !== false && !sOff.pace.hidden) {
+          const paceVal = it.paceFormatted ? it.paceFormatted.split(' ')[0] : '--';
+          tokens.push({ key: 'pace', text: `${paceVal} /km`, isPace: true });
+        }
+        if (splitCols.avgHr) {
+          const hr = it.avgHr || it.hr || it.heartRate;
+          if (hr) tokens.push({ key: 'avgHr', text: `♥ ${Math.round(hr)}` });
+        }
+        if (splitCols.maxHr) {
+          const mHr = it.maxHr ? Math.round(it.maxHr) : (it.avgHr ? Math.round(it.avgHr * 1.08) : null);
+          if (mHr) tokens.push({ key: 'maxHr', text: `↑${mHr}` });
+        }
+        if (splitCols.minHr) {
+          const minH = it.minHr ? Math.round(it.minHr) : (it.avgHr ? Math.round(it.avgHr * 0.9) : null);
+          if (minH) tokens.push({ key: 'minHr', text: `↓${minH}` });
+        }
+        if (splitCols.time) {
+          let tStr = it.timeFormatted || it.durationFormatted;
+          if (!tStr && it.duration) {
+            const m = Math.floor(it.duration / 60);
+            const s = Math.floor(it.duration % 60);
+            tStr = `${m}:${String(s).padStart(2, '0')}`;
+          }
+          if (tStr) tokens.push({ key: 'time', text: tStr });
+        }
+        if (splitCols.delta) {
+          let dStr = it.deltaFormatted;
+          if (!dStr && it.pace) {
+            const basePace = activity.avgPace || (items.reduce((acc, s) => acc + (s.pace || 0), 0) / (items.length || 1));
+            if (basePace > 0) {
+              const diff = Math.round(it.pace - basePace);
+              dStr = (diff > 0 ? '+' : '') + diff + 's';
+            }
+          }
+          if (dStr) tokens.push({ key: 'delta', text: dStr });
+        }
+        if (splitCols.cadence) {
+          const cad = it.avgCadence || it.cadence || it.cad;
+          if (cad) tokens.push({ key: 'cadence', text: `${Math.round(cad)} spm` });
+        }
+        if (splitCols.elevation) {
+          let eStr = null;
+          if (it.elevationGain != null && it.elevationGain !== 0) {
+            const val = isImp ? Math.round(it.elevationGain * 3.28084) : Math.round(it.elevationGain);
+            eStr = `+${val}${isImp ? 'ft' : 'm'}`;
+          } else if (it.elevationLoss != null && it.elevationLoss !== 0) {
+            const val = isImp ? Math.round(it.elevationLoss * 3.28084) : Math.round(it.elevationLoss);
+            eStr = `-${val}${isImp ? 'ft' : 'm'}`;
+          } else if (it.elevation != null) {
+            const val = isImp ? Math.round(it.elevation * 3.28084) : Math.round(it.elevation);
+            eStr = `${val}${isImp ? 'ft' : 'm'}`;
+          }
+          if (eStr) tokens.push({ key: 'elevation', text: eStr });
+        }
+
+        // 3. Compute telemetry cluster width
+        ctx.font = this.getSplitFont(config, widgetKey, idx, 'pace', 'bold', 10);
+        let totalTokensW = 0;
+        const separator = ' • ';
+        const sepW = ctx.measureText(separator).width;
+        tokens.forEach((t, i) => {
+          totalTokensW += ctx.measureText(t.text).width;
+          if (i > 0) totalTokensW += sepW;
+        });
+
+        const barStartX = x + padX + 32;
+        const metricsAreaW = Math.max(40, totalTokensW);
+        const maxBarW = Math.max(20, width - padX * 2 - metricsAreaW - 44);
+        const paceNorm = Math.max(0.15, Math.min(1, 1 - (it.pace - minPace) / (maxPace - minPace || 1) * 0.75));
         const barW = maxBarW * paceNorm;
 
+        // 4. Draw horizontal progress bar
         if (!sOff.bar.hidden) {
           ctx.save();
           this.applyZDepth(ctx, sOff.bar.z);
@@ -5584,15 +5779,39 @@ export class OverlayRenderer {
           ctx.restore();
         }
 
-        if (!sOff.pace.hidden) {
-          ctx.save();
-          this.applyZDepth(ctx, sOff.pace.z);
-          ctx.textAlign = 'right';
-          ctx.fillStyle = sOff.pace.color !== 'default' ? sOff.pace.color : (isFastest ? elAccent : text);
-          ctx.font = this.getSplitFont(config, widgetKey, idx, 'pace', 'bold', 10);
-          ctx.fillText(it.paceFormatted.split(' ')[0], x + width - padX + sOff.pace.x, ry + rowH / 2 + 4 + sOff.pace.y);
-          ctx.restore();
+        // 5. Draw right-aligned telemetry cluster
+        ctx.save();
+        this.applyZDepth(ctx, sOff.pace.z);
+        let curTokenRightX = x + width - padX + sOff.pace.x;
+        ctx.textAlign = 'right';
+
+        for (let tIdx = tokens.length - 1; tIdx >= 0; tIdx--) {
+          const t = tokens[tIdx];
+          if (t.isPace) {
+            ctx.fillStyle = sOff.pace.color !== 'default' ? sOff.pace.color : (isFastest ? elAccent : text);
+            ctx.font = this.getSplitFont(config, widgetKey, idx, 'pace', 'bold', 10);
+          } else if (t.key === 'avgHr') {
+            ctx.fillStyle = '#f87171';
+            ctx.font = this.getSubPartFont(config, widgetKey, 'table', '600', 9.5);
+          } else if (t.key === 'delta') {
+            ctx.fillStyle = t.text.startsWith('-') ? (elAccent || '#10b981') : textMuted;
+            ctx.font = this.getSubPartFont(config, widgetKey, 'table', '600', 9.5);
+          } else {
+            ctx.fillStyle = textMuted;
+            ctx.font = this.getSubPartFont(config, widgetKey, 'table', '500', 9.5);
+          }
+          const tW = ctx.measureText(t.text).width;
+          ctx.fillText(t.text, curTokenRightX, ry + rowH / 2 + 4 + sOff.pace.y);
+          curTokenRightX -= tW;
+
+          if (tIdx > 0) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
+            ctx.font = this.getSubPartFont(config, widgetKey, 'table', '400', 9);
+            ctx.fillText(separator, curTokenRightX, ry + rowH / 2 + 4 + sOff.pace.y);
+            curTokenRightX -= sepW;
+          }
         }
+        ctx.restore();
       });
 
       ctx.restore();
@@ -8041,19 +8260,27 @@ export class OverlayRenderer {
 
       switch (category) {
         case 'hero': {
-          const heroH = instConfig.heroDesign === 'mega' ? 160 : 120;
+          let heroH = 120;
+          if (instConfig.heroDesign === 'mega' || instConfig.heroDesign === 'vertical-totem') heroH = 160;
+          else if (instConfig.heroDesign === 'speedometer' || instConfig.heroDesign === 'precision-hud-gauge') heroH = 145;
           const pos = this.getWidgetPos(instConfig, widgetKey, defaultX, defaultY, defaultW, heroH);
           this.drawHeroStat(ctx, pos.x, pos.y, pos.width, activity, instConfig, theme, accent, pos.height, widgetKey);
           break;
         }
         case 'metrics': {
-          const metH = 90;
+          let metH = 95;
+          if (['vertical-stacked-hud', 'vertical-minimal-stack', 'vertical-pill-stack', 'vertical-timeline-flow', 'vertical-data-ladder', 'vertical-athletic-cards'].includes(instConfig.metricsDesign)) {
+            metH = 220;
+          } else if (instConfig.metricsDesign === 'cards-2col' || instConfig.metricsDesign === 'centered-cross-quad') {
+            metH = 140;
+          }
           const pos = this.getWidgetPos(instConfig, widgetKey, defaultX, defaultY, defaultW, metH);
           this.drawMetricsGrid(ctx, pos.x, pos.y, pos.width, activity, instConfig, theme, accent, 3, pos.height, widgetKey);
           break;
         }
         case 'splits': {
-          const chartH = 150;
+          let chartH = 150;
+          if (instConfig.splitsDesign === 'pace-table' || instConfig.splitsDesign === 'split-ladder-timeline' || instConfig.splitsDesign === 'vertical-split-cards') chartH = 200;
           const pos = this.getWidgetPos(instConfig, widgetKey, defaultX, defaultY, defaultW, chartH);
           this.drawSplitsBarChart(ctx, pos.x, pos.y, pos.width, activity, instConfig, theme, accent, pos.height, widgetKey);
           break;

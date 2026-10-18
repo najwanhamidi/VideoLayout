@@ -157,6 +157,17 @@
         <button id="toggleInteractiveLayoutBtn" class="btn btn-secondary btn-toggle-active" style="padding: 4px 10px; font-size: 0.75rem;" title="Toggle Interactive Drag & Resize on Canvas">
           ✋ Drag & Resize: ON
         </button>
+        <!-- Snap to Grid Toolbar Control -->
+        <div class="stage-grid-group" style="display: inline-flex; align-items: center; gap: 4px; background: rgba(255, 255, 255, 0.05); padding: 2px 6px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1);">
+          <button type="button" id="toggleSnapToGridBtn" class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem;" title="Toggle Snap to Grid (Click to toggle)">
+            🧲 Snap: OFF
+          </button>
+          <label style="font-size: 0.72rem; color: var(--text-muted); display: inline-flex; align-items: center; gap: 2px;" title="Customizable Grid Size (px)">
+            <span>Grid:</span>
+            <input type="number" id="snapGridToolbarSize" min="2" max="200" step="5" value="20" style="width: 44px; padding: 2px 4px; font-size: 0.75rem; background: var(--bg-surface); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; text-align: center;">
+            <span>px</span>
+          </label>
+        </div>
         <button id="resetAllLayoutBtn" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" title="Reset All Widget Positions to Template Default">
           ↺ Reset Layout
         </button>
@@ -474,7 +485,7 @@
               <span>Split Data Columns To Display</span>
             </div>
             <div style="font-size: 0.72rem; color: var(--text-muted); margin-bottom: 6px;">
-              Select which metrics appear in the split table widget:
+              Select which metrics appear in the Split Table &amp; Horizontal Progress Bar templates:
             </div>
             <div class="split-columns-grid">
               <label class="split-col-checkbox-label">
@@ -1000,6 +1011,60 @@
             </div>
           </div>
 
+          <!-- Canvas Alignment & Snap to Grid Section (New User Requirement) -->
+          <div class="section" id="snapToGridSection">
+            <div class="section-title">
+              <span>🧲 Canvas Alignment &amp; Snap to Grid</span>
+              <span id="snapGridStatusBadge" class="badge" style="font-size: 0.7rem; background: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px;">OFF</span>
+            </div>
+            <div style="font-size: 0.72rem; color: var(--text-muted); margin-bottom: 8px;">
+              Snap widgets to precise grid intervals when dragging and resizing on canvas.
+            </div>
+            <div class="toggle-item" style="margin-bottom: 8px;">
+              <div class="toggle-label-group">
+                <span class="toggle-icon">🧲</span>
+                <div>
+                  <div class="toggle-text">Snap to Grid</div>
+                  <div class="toggle-desc">Constrain positions and sizes to grid intervals</div>
+                </div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="snapToGridCheckbox">
+                <span class="slider"></span>
+              </label>
+            </div>
+            <div class="form-group" style="margin-bottom: 8px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <label class="form-label" style="margin-bottom: 0;">Grid Interval Size:</label>
+                <div style="display: flex; align-items: center; gap: 4px;">
+                  <input type="number" id="snapGridSizeNumber" class="form-input" min="2" max="200" step="1" value="20" style="width: 55px; padding: 2px 6px; font-size: 0.75rem; text-align: center;">
+                  <span style="font-size: 0.75rem; color: var(--text-muted);">px</span>
+                </div>
+              </div>
+              <input type="range" id="snapGridSizeSlider" class="form-slider" min="5" max="100" step="5" value="20">
+              <div class="grid-presets" style="display: flex; gap: 6px; margin-top: 6px;">
+                <button type="button" class="btn btn-secondary grid-preset-btn" data-grid="5" style="flex: 1; padding: 3px 0; font-size: 0.7rem;">5px</button>
+                <button type="button" class="btn btn-secondary grid-preset-btn" data-grid="10" style="flex: 1; padding: 3px 0; font-size: 0.7rem;">10px</button>
+                <button type="button" class="btn btn-secondary grid-preset-btn" data-grid="20" style="flex: 1; padding: 3px 0; font-size: 0.7rem;">20px</button>
+                <button type="button" class="btn btn-secondary grid-preset-btn" data-grid="25" style="flex: 1; padding: 3px 0; font-size: 0.7rem;">25px</button>
+                <button type="button" class="btn btn-secondary grid-preset-btn" data-grid="50" style="flex: 1; padding: 3px 0; font-size: 0.7rem;">50px</button>
+              </div>
+            </div>
+            <div class="toggle-item">
+              <div class="toggle-label-group">
+                <span class="toggle-icon">📐</span>
+                <div>
+                  <div class="toggle-text">Show Grid Guidelines</div>
+                  <div class="toggle-desc">Show visual grid lines across canvas during editing</div>
+                </div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="showGridOverlayCheckbox">
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+
           <!-- Selected Widget Layout Position Adjuster -->
           <div class="section">
             <div class="section-title">
@@ -1089,6 +1154,23 @@
                   <!-- Dynamically populated based on selected widget -->
                 </optgroup>
               </select>
+            </div>
+
+            <!-- Widget Design Template / Style Selector (Supports Base & Extra Instances) -->
+            <div id="inspectorTemplateContainer" class="form-group" style="display: none; background: rgba(0, 240, 255, 0.05); border: 1px solid rgba(0, 240, 255, 0.25); border-radius: 8px; padding: 8px 10px; margin-bottom: 12px;">
+              <label class="form-label" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <span style="color: #00f0ff; font-weight: 700;">🎨 Design Style & Template:</span>
+                <span id="inspectorTemplateBadge" style="font-size: 0.68rem; color: var(--accent-volt); font-weight: 700;">CUSTOM</span>
+              </label>
+              <select id="inspectorTemplateSelect" class="form-select" style="margin-bottom: 6px; font-size: 0.8rem;">
+                <!-- Dynamically populated based on widget category -->
+              </select>
+              <div id="inspectorExtraFieldContainer" style="display: none;">
+                <label class="form-label" style="font-size: 0.72rem; color: var(--text-muted); margin-bottom: 2px;" id="inspectorExtraFieldLabel">Metric / Option:</label>
+                <select id="inspectorExtraFieldSelect" class="form-select" style="font-size: 0.8rem;">
+                  <!-- Dynamically populated if hero, splitHighlight, etc. -->
+                </select>
+              </div>
             </div>
 
             <!-- Widget / Component Deleted Alert Banner -->

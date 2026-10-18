@@ -241,6 +241,24 @@ export function calculateSplits(trackpoints, splitDistanceMeters = 1000, isImper
   if (fastestIdx !== -1) splits[fastestIdx].isFastest = true;
   if (slowestIdx !== -1 && slowestIdx !== fastestIdx) splits[slowestIdx].isSlowest = true;
 
+  // Calculate split delta relative to overall average pace
+  let totalDur = 0, totalD = 0;
+  splits.forEach((s) => {
+    totalDur += s.duration || 0;
+    totalD += s.distance || 0;
+  });
+  const avgPaceSec = totalD > 0 ? totalDur / (totalD / 1000) : 0;
+  splits.forEach((s) => {
+    if (avgPaceSec > 0 && s.pace > 0) {
+      const diff = Math.round(s.pace - avgPaceSec);
+      s.deltaSec = diff;
+      s.deltaFormatted = (diff > 0 ? '+' : '') + diff + 's';
+    } else {
+      s.deltaSec = 0;
+      s.deltaFormatted = '0s';
+    }
+  });
+
   return splits;
 }
 
@@ -310,6 +328,24 @@ export function standardizeLaps(rawLaps, isImperial = false) {
 
   if (fastestIdx !== -1) laps[fastestIdx].isFastest = true;
   if (slowestIdx !== -1 && slowestIdx !== fastestIdx) laps[slowestIdx].isSlowest = true;
+
+  // Calculate lap delta relative to overall average pace
+  let totalDur = 0, totalD = 0;
+  laps.forEach((l) => {
+    totalDur += l.duration || 0;
+    totalD += l.distance || 0;
+  });
+  const avgPaceSec = totalD > 0 ? totalDur / (totalD / 1000) : 0;
+  laps.forEach((l) => {
+    if (avgPaceSec > 0 && l.pace > 0) {
+      const diff = Math.round(l.pace - avgPaceSec);
+      l.deltaSec = diff;
+      l.deltaFormatted = (diff > 0 ? '+' : '') + diff + 's';
+    } else {
+      l.deltaSec = 0;
+      l.deltaFormatted = '0s';
+    }
+  });
 
   return laps;
 }
