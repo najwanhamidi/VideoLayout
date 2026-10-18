@@ -4970,6 +4970,39 @@ export class OverlayRenderer {
     const font = this.getFontFamily(elStyle.fontFamily !== 'default' ? elStyle.fontFamily : config.fontFamily);
     const design = config.splitsDesign || 'vertical-bars';
 
+    const hasCustomH = Boolean(
+      config.widgetPositions &&
+      config.widgetPositions[widgetKey] &&
+      (config.widgetPositions[widgetKey].height || config.widgetPositions[widgetKey].h)
+    );
+
+    const totalItemsCount = items.length;
+    let minNeededH = chartH;
+    if (design === 'pace-table') {
+      minNeededH = Math.max(chartH, 56 + totalItemsCount * 22);
+    } else if (design === 'horizontal-bars') {
+      minNeededH = Math.max(chartH, 48 + totalItemsCount * 22);
+    } else if (design === 'centered-split-ladder' || design === 'split-ladder-timeline') {
+      minNeededH = Math.max(chartH, 48 + totalItemsCount * 22);
+    } else if (design === 'vertical-split-cards') {
+      minNeededH = Math.max(chartH, 48 + totalItemsCount * 34);
+    } else if (design === 'pace-delta-bars') {
+      minNeededH = Math.max(chartH, 48 + totalItemsCount * 20);
+    } else if (design === 'centered-split-pills') {
+      const isTwoCol = totalItemsCount >= 6 && width > 420;
+      const cols = isTwoCol ? 2 : 1;
+      const rows = Math.ceil(totalItemsCount / cols);
+      minNeededH = Math.max(chartH, 48 + rows * 34);
+    } else if (design === 'card-grid') {
+      const cols = totalItemsCount > 15 ? 4 : totalItemsCount > 5 ? 3 : 2;
+      const rows = Math.ceil(totalItemsCount / cols);
+      minNeededH = Math.max(chartH, 48 + rows * 48);
+    }
+
+    if (!hasCustomH) {
+      chartH = minNeededH;
+    }
+
     this.recordBounds(widgetKey, 'Splits Chart', x, y, width, chartH);
     this.drawWidgetCardBg(ctx, widgetKey, x, y, width, chartH, config, theme);
 
@@ -5012,7 +5045,7 @@ export class OverlayRenderer {
       ctx.restore();
     }
 
-    const visibleSplits = items.slice(0, 10);
+    const visibleSplits = items;
     const count = visibleSplits.length;
 
     if (design === 'centered-split-ladder') {
@@ -5335,7 +5368,6 @@ export class OverlayRenderer {
       });
 
       const headerFontSize = colDefs.length > 6 ? 9 : 10;
-      const cellFontSize = colDefs.length > 6 ? 9.5 : colDefs.length > 4 ? 10 : 11;
 
       ctx.fillStyle = textMuted;
       ctx.font = this.getSubPartFont(config, widgetKey, 'table', '600', headerFontSize);
@@ -5347,7 +5379,8 @@ export class OverlayRenderer {
 
       const tableStartY = headerY + 12;
       const availableH = chartH - (tableStartY - y) - 8;
-      const rowH = Math.min(22, Math.max(14, availableH / count));
+      const rowH = Math.min(24, Math.max(11, availableH / count));
+      const cellFontSize = colDefs.length > 6 ? (rowH < 14 ? 8 : 9) : (rowH < 14 ? 8.5 : 10.5);
       const isImp = activity.distanceUnit === 'mi';
 
       visibleSplits.forEach((it, idx) => {
@@ -5513,11 +5546,11 @@ export class OverlayRenderer {
     }
 
     if (design === 'vertical-split-cards') {
-      const cardGap = 6;
-      const countCards = Math.min(count, 5);
-      const singleH = Math.max(28, Math.floor((chartH - 45 - (countCards - 1) * cardGap) / countCards));
+      const cardGap = count > 15 ? 4 : 6;
+      const countCards = count;
+      const singleH = Math.max(18, Math.floor((chartH - 45 - (countCards - 1) * cardGap) / countCards));
 
-      visibleSplits.slice(0, countCards).forEach((it, idx) => {
+      visibleSplits.forEach((it, idx) => {
         const sOff = this.getSplitItemOffsets(config, widgetKey, idx);
         if (sOff.split.hidden) return;
         const cx = x + padX + sOff.split.x;
@@ -5562,8 +5595,8 @@ export class OverlayRenderer {
     }
 
     if (design === 'split-ladder-timeline') {
-      const countT = Math.min(count, 6);
-      const rowH = Math.max(22, Math.floor((chartH - 45) / countT));
+      const countT = count;
+      const rowH = Math.max(14, Math.floor((chartH - 45) / countT));
       const axisX = x + padX + 24;
 
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
@@ -5573,7 +5606,7 @@ export class OverlayRenderer {
       ctx.lineTo(axisX, y + 42 + countT * rowH - 8);
       ctx.stroke();
 
-      visibleSplits.slice(0, countT).forEach((it, idx) => {
+      visibleSplits.forEach((it, idx) => {
         const sOff = this.getSplitItemOffsets(config, widgetKey, idx);
         if (sOff.split.hidden) return;
         const nodeY = y + 42 + idx * rowH + rowH / 2 + sOff.split.y;
@@ -5661,8 +5694,8 @@ export class OverlayRenderer {
 
     if (design === 'horizontal-bars') {
       const isAnim = activity.isAnimated && items.some((it) => it.isCompleted !== undefined);
-      const countH = Math.min(items.length, 10);
-      const rowH = Math.max(18, Math.min(26, Math.floor((chartH - 45) / countH)));
+      const countH = items.length;
+      const rowH = Math.max(12, Math.min(26, Math.floor((chartH - 45) / countH)));
       const startY = y + 40;
 
       const defaultCols = { split: true, time: true, pace: true, delta: true, avgHr: true, maxHr: false, minHr: false, cadence: false, elevation: true };
@@ -5670,7 +5703,7 @@ export class OverlayRenderer {
       const isImp = activity.distanceUnit === 'mi';
 
       let minPace = Infinity, maxPace = 0;
-      items.slice(0, countH).forEach((it) => {
+      items.forEach((it) => {
         if (it.pace > 0) {
           if (it.pace < minPace) minPace = it.pace;
           if (it.pace > maxPace) maxPace = it.pace;
@@ -5679,7 +5712,7 @@ export class OverlayRenderer {
       if (minPace === Infinity) minPace = 240;
       if (maxPace <= minPace) maxPace = minPace + 60;
 
-      items.slice(0, countH).forEach((it, idx) => {
+      items.forEach((it, idx) => {
         const sOff = this.getSplitItemOffsets(config, widgetKey, idx);
         if (sOff.split.hidden) return;
         const ry = startY + idx * rowH + sOff.split.y;
@@ -5913,12 +5946,6 @@ export class OverlayRenderer {
         ctx.fillStyle = sOff.pace.color !== 'default' ? sOff.pace.color : ((isAnim && it.isCurrent) ? elAccent : ((it.isFastest && showFastest) ? elAccent : text));
         ctx.font = this.getSplitFont(config, widgetKey, idx, 'pace', 'bold', 10);
         ctx.fillText(paceLabel, bx + barW / 2 + sOff.pace.x, effectiveBy - 6 + sOff.split.y + sOff.pace.y);
-
-        if (isAnim && it.isCurrent) {
-          ctx.fillStyle = elAccent;
-          ctx.font = 'bold 9px sans-serif';
-          ctx.fillText('● LIVE', bx + barW / 2 + sOff.pace.x, effectiveBy - 18 + sOff.split.y + sOff.pace.y);
-        }
         ctx.restore();
       }
     });
