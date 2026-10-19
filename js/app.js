@@ -77,11 +77,14 @@ const state = {
     headerShowLocation: true,
     weatherText: '',
     customWatermark: '',
+    metricShowTime: true,
+    metricShowPace: true,
     metricShowHr: true,
     metricShowElevation: true,
     metricShowCadence: true,
     metricShowCalories: true,
-    metricShowBestPace: true,
+    metricShowDistance: false,
+    metricShowBestPace: false,
     // Custom Metric Labels (Multi-Language Overrides)
     labelDistance: '',
     labelTime: '',
@@ -156,15 +159,21 @@ const gizmoTitle = document.getElementById('gizmoTitle');
 const gizmoDeleteBtn = document.getElementById('gizmoDeleteBtn');
 
 // Gizmo Drag & Resize State
-let activeDragMode = null; // 'move', 'resize', 'photo'
+let activeDragMode = null; // 'move', 'resize', 'photo', 'rotate'
 let activeHandle = null;
 let dragStartX = 0;
 let dragStartY = 0;
+let dragCenterX = 0;
+let dragCenterY = 0;
+let dragInitialRot = 0;
 let dragInitialPos = null;
 let dragInitialPanX = 0;
 let dragInitialPanY = 0;
 let dragInitialZoom = 1;
 let isInteracting = false;
+
+window.addEventListener('keydown', (e) => { if (e.key === 'Shift') window._shiftKeyPressed = true; });
+window.addEventListener('keyup', (e) => { if (e.key === 'Shift') window._shiftKeyPressed = false; });
 
 // ==========================================
 // UNIVERSAL UNDO / REDO & RESTORE ENGINE
@@ -329,13 +338,23 @@ function syncAllControlsWithConfig() {
     if (el) el.checked = cfg[key] !== false;
   });
 
-  // 6. Metrics Checkboxes
-  const metricToggles = [
-    'metricShowHr', 'metricShowElevation', 'metricShowCadence', 'metricShowCalories', 'metricShowBestPace',
+  // 6. Metrics Checkboxes (Sync across Format Tab, Widgets Tab, and Inspector)
+  const metricBinds = [
+    { key: 'metricShowTime', ids: ['metricToggleTime', 'wToggleMetricTime', 'insToggleMetricTime'], def: true },
+    { key: 'metricShowPace', ids: ['metricTogglePace', 'wToggleMetricPace', 'insToggleMetricPace'], def: true },
+    { key: 'metricShowHr', ids: ['metricToggleHr', 'wToggleMetricHr', 'insToggleMetricHr'], def: true },
+    { key: 'metricShowElevation', ids: ['metricToggleElevation', 'wToggleMetricElevation', 'insToggleMetricElevation'], def: true },
+    { key: 'metricShowCadence', ids: ['metricToggleCadence', 'wToggleMetricCadence', 'insToggleMetricCadence'], def: true },
+    { key: 'metricShowCalories', ids: ['metricToggleCalories', 'wToggleMetricCalories', 'insToggleMetricCalories'], def: true },
+    { key: 'metricShowDistance', ids: ['metricToggleDistance', 'wToggleMetricDistance', 'insToggleMetricDistance'], def: false },
+    { key: 'metricShowBestPace', ids: ['metricToggleBestPace', 'wToggleMetricBestPace', 'insToggleMetricBestPace'], def: false },
   ];
-  metricToggles.forEach((key) => {
-    const el = document.getElementById(key);
-    if (el) el.checked = cfg[key] !== false;
+  metricBinds.forEach(({ key, ids, def }) => {
+    const isVal = cfg[key] !== undefined ? Boolean(cfg[key]) : def;
+    ids.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.checked = isVal;
+    });
   });
 
   // 7. Splits Tab Checkboxes
@@ -614,9 +633,12 @@ function setupUndoRedoControls() {
   updateUndoRedoButtons();
 }
 
+let arrowKeyUndoTimer = null;
+let arrowKeyGridTimer = null;
+
 function setupKeyboardShortcuts() {
   window.addEventListener('keydown', (e) => {
-    const isInputActive = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
+    const isInputActive = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName) || document.activeElement?.isContentEditable;
 
     // Ctrl+Z / Cmd+Z for Undo
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
@@ -643,6 +665,7 @@ function setupKeyboardShortcuts() {
         e.preventDefault();
         deleteSelectedTarget(state.selectedWidget);
       }
+      return;
     }
 
     // Spacebar to toggle Play/Pause Run Animation (when not typing in an input/textarea)
@@ -650,6 +673,113 @@ function setupKeyboardShortcuts() {
       if (videoAnimator) {
         e.preventDefault();
         videoAnimator.togglePlay();
+      }
+      return;
+    }
+
+    // Keyboard Arrow Keys: Move / Nudge selected widget by a grid
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && !isInputActive) {
+      if (state.selectedWidget) {
+        e.preventDefault();
+
+        // Push undo snapshot (debounced so rapid arrow key presses create a single undo step)
+        if (!arrowKeyUndoTimer) {
+          pushUndoSnapshot();
+        }
+        clearTimeout(arrowKeyUndoTimer);
+        arrowKeyUndoTimer = setTimeout(() => {
+          arrowKeyUndoTimer = null;
+        }, 400);
+
+        const dx = e.key === 'ArrowRight' ? 1 : (e.key === 'ArrowLeft' ? -1 : 0);
+        const dy = e.key === 'ArrowDown' ? 1 : (e.key === 'ArrowUp' ? -1 : 0);
+
+        const g = state.config.gridSize || 20;
+        let step = g;
+        if (e.shiftKey) step = g * 5;
+        if (e.altKey) step = 1;
+
+        const subPartSelect = document.getElementById('inspectorSubPartSelect');
+        const currentPart = subPartSelect ? subPartSelect.value : 'widget';
+
+        if (currentPart && currentPart !== 'widget' && currentPart !== 'bg') {
+          // Move selected sub-element
+          if (!state.config.widgetElementOffsets) state.config.widgetElementOffsets = {};
+          if (!state.config.widgetElementOffsets[state.selectedWidget]) state.config.widgetElementOffsets[state.selectedWidget] = {};
+          if (!state.config.widgetElementOffsets[state.selectedWidget][currentPart]) {
+            state.config.widgetElementOffsets[state.selectedWidget][currentPart] = { x: 0, y: 0, z: 1 };
+          }
+          const off = state.config.widgetElementOffsets[state.selectedWidget][currentPart];
+          const moveStep = e.altKey ? 1 : (e.shiftKey ? 10 : 5);
+          off.x = (off.x || 0) + dx * moveStep;
+          off.y = (off.y || 0) + dy * moveStep;
+          triggerRender();
+          if (window.syncInspectorWithSelectedElement) {
+            window.syncInspectorWithSelectedElement(state.selectedWidget, currentPart);
+          }
+        } else if (state.selectedWidget === '__bg_photo__') {
+          state.config.photoPanX = (state.config.photoPanX || 0) + dx * step;
+          state.config.photoPanY = (state.config.photoPanY || 0) + dy * step;
+          triggerRender();
+          if (window.syncInspectorWithSelectedElement) {
+            window.syncInspectorWithSelectedElement('__bg_photo__');
+          }
+        } else if (state.selectedWidget.endsWith('_bg')) {
+          const baseKey = state.selectedWidget.replace(/_bg$/, '');
+          if (!state.config.widgetBgStyles) state.config.widgetBgStyles = {};
+          if (!state.config.widgetBgStyles[baseKey]) state.config.widgetBgStyles[baseKey] = {};
+          const bg = state.config.widgetBgStyles[baseKey];
+          let curX = bg.offsetX || 0;
+          let curY = bg.offsetY || 0;
+          if (state.config.snapToGrid && !e.altKey) {
+            curX = (Math.round(curX / g) + dx * Math.max(1, Math.round(step / g))) * g;
+            curY = (Math.round(curY / g) + dy * Math.max(1, Math.round(step / g))) * g;
+          } else {
+            curX += dx * step;
+            curY += dy * step;
+          }
+          bg.offsetX = curX;
+          bg.offsetY = curY;
+          triggerRender();
+          if (window.syncInspectorWithSelectedElement) {
+            window.syncInspectorWithSelectedElement(baseKey, 'bg');
+          }
+        } else {
+          const b = renderer.widgetBounds ? renderer.widgetBounds[state.selectedWidget] : null;
+          if (!state.config.widgetPositions) state.config.widgetPositions = {};
+          const cur = state.config.widgetPositions[state.selectedWidget] || (b ? { x: b.x, y: b.y, width: b.width, height: b.height } : { x: 0, y: 0, width: 200, height: 100 });
+          let curX = cur.x !== undefined ? cur.x : (b ? b.x : 0);
+          let curY = cur.y !== undefined ? cur.y : (b ? b.y : 0);
+          if (state.config.snapToGrid && !e.altKey) {
+            curX = (Math.round(curX / g) + dx * Math.max(1, Math.round(step / g))) * g;
+            curY = (Math.round(curY / g) + dy * Math.max(1, Math.round(step / g))) * g;
+          } else {
+            curX += dx * step;
+            curY += dy * step;
+          }
+          state.config.widgetPositions[state.selectedWidget] = {
+            ...cur,
+            x: curX,
+            y: curY
+          };
+          if (state.config.snapToGrid) {
+            state.config.isDraggingGrid = true;
+            clearTimeout(arrowKeyGridTimer);
+            arrowKeyGridTimer = setTimeout(() => {
+              state.config.isDraggingGrid = false;
+              triggerRender();
+            }, 350);
+          }
+          triggerRender();
+          if (window.syncInspectorWithSelectedElement) {
+            window.syncInspectorWithSelectedElement(state.selectedWidget, 'widget');
+          }
+        }
+
+        updateGizmoBox();
+        if (typeof updateFloatingToolbarPosition === 'function') {
+          updateFloatingToolbarPosition();
+        }
       }
     }
   });
@@ -821,6 +951,7 @@ function init() {
   window.selectWidget = selectWidget;
   window.centerWidget = centerWidget;
   window.triggerRender = triggerRender;
+  window.syncAllControlsWithConfig = syncAllControlsWithConfig;
   triggerRender();
 }
 
@@ -1457,11 +1588,14 @@ function extractTemplateConfig(cfg) {
     showWidgetAvgHrBadge: cfg.showWidgetAvgHrBadge !== false,
 
     // Metric items
+    metricShowTime: cfg.metricShowTime !== false,
+    metricShowPace: cfg.metricShowPace !== false,
     metricShowHr: cfg.metricShowHr !== false,
     metricShowElevation: cfg.metricShowElevation !== false,
     metricShowCadence: cfg.metricShowCadence !== false,
     metricShowCalories: cfg.metricShowCalories !== false,
-    metricShowBestPace: cfg.metricShowBestPace !== false,
+    metricShowDistance: Boolean(cfg.metricShowDistance),
+    metricShowBestPace: Boolean(cfg.metricShowBestPace),
 
     // Widget designs
     headerTemplate: cfg.headerTemplate || cfg.headerDesign || 'modern',
@@ -2200,6 +2334,89 @@ function setupWidgetsControls() {
     }
   });
 
+  // Secondary Metrics Individual Item Toggles and Presets
+  const metricBinds = [
+    { key: 'metricShowTime', ids: ['metricToggleTime', 'wToggleMetricTime', 'insToggleMetricTime'], def: true },
+    { key: 'metricShowPace', ids: ['metricTogglePace', 'wToggleMetricPace', 'insToggleMetricPace'], def: true },
+    { key: 'metricShowHr', ids: ['metricToggleHr', 'wToggleMetricHr', 'insToggleMetricHr'], def: true },
+    { key: 'metricShowElevation', ids: ['metricToggleElevation', 'wToggleMetricElevation', 'insToggleMetricElevation'], def: true },
+    { key: 'metricShowCadence', ids: ['metricToggleCadence', 'wToggleMetricCadence', 'insToggleMetricCadence'], def: true },
+    { key: 'metricShowCalories', ids: ['metricToggleCalories', 'wToggleMetricCalories', 'insToggleMetricCalories'], def: true },
+    { key: 'metricShowDistance', ids: ['metricToggleDistance', 'wToggleMetricDistance', 'insToggleMetricDistance'], def: false },
+    { key: 'metricShowBestPace', ids: ['metricToggleBestPace', 'wToggleMetricBestPace', 'insToggleMetricBestPace'], def: false },
+  ];
+
+  const setMetricItemVisibility = (metricKey, isVisible) => {
+    pushUndoSnapshot();
+    state.config[metricKey] = isVisible;
+    const bind = metricBinds.find((b) => b.key === metricKey);
+    if (bind) {
+      bind.ids.forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.checked = isVisible;
+      });
+    }
+    triggerRender();
+  };
+
+  metricBinds.forEach(({ key, ids }) => {
+    ids.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.addEventListener('change', (e) => {
+          setMetricItemVisibility(key, e.target.checked);
+        });
+      }
+    });
+  });
+
+  const applyMetricPreset = (preset) => {
+    pushUndoSnapshot();
+    if (preset === 'all') {
+      metricBinds.forEach(({ key, ids }) => {
+        state.config[key] = true;
+        ids.forEach((id) => {
+          const el = document.getElementById(id);
+          if (el) el.checked = true;
+        });
+      });
+    } else if (preset === 'core') {
+      const coreKeys = ['metricShowTime', 'metricShowPace', 'metricShowHr'];
+      metricBinds.forEach(({ key, ids }) => {
+        const val = coreKeys.includes(key);
+        state.config[key] = val;
+        ids.forEach((id) => {
+          const el = document.getElementById(id);
+          if (el) el.checked = val;
+        });
+      });
+    } else if (preset === 'telemetry') {
+      const telemetryKeys = ['metricShowHr', 'metricShowElevation', 'metricShowCadence', 'metricShowCalories'];
+      metricBinds.forEach(({ key, ids }) => {
+        const val = telemetryKeys.includes(key);
+        state.config[key] = val;
+        ids.forEach((id) => {
+          const el = document.getElementById(id);
+          if (el) el.checked = val;
+        });
+      });
+    }
+    triggerRender();
+  };
+
+  ['metricsSelectAllBtn', 'inspectorMetricsSelectAllBtn'].forEach((id) => {
+    const btn = document.getElementById(id);
+    if (btn) btn.addEventListener('click', () => applyMetricPreset('all'));
+  });
+
+  ['metricsSelectCoreBtn', 'inspectorMetricsSelectCoreBtn'].forEach((id) => {
+    const btn = document.getElementById(id);
+    if (btn) btn.addEventListener('click', () => applyMetricPreset('core'));
+  });
+
+  const telemetryBtn = document.getElementById('metricsSelectTelemetryBtn');
+  if (telemetryBtn) telemetryBtn.addEventListener('click', () => applyMetricPreset('telemetry'));
+
   // Hero metric choice
   setupCardGrid('#heroMetricGrid', 'data-hero', (hero) => {
     pushUndoSnapshot();
@@ -2242,6 +2459,64 @@ function setupWidgetsControls() {
       }
     });
   }
+
+  // Manual Rotation Sliders in Widgets Tab
+  const rotSlider = document.getElementById('widgetRotationSlider');
+  const rotInput = document.getElementById('widgetRotationInput');
+  const rotVal = document.getElementById('widgetRotationVal');
+  const resetRotBtn = document.getElementById('resetWidgetRotationBtn');
+
+  const onRotationChange = (deg, pushHistory = false) => {
+    if (!state.selectedWidget) return;
+    if (pushHistory) pushUndoSnapshot();
+    const cur = state.config.widgetPositions[state.selectedWidget] || renderer.widgetBounds[state.selectedWidget] || {};
+    const clampedDeg = Math.max(-180, Math.min(180, Math.round(deg)));
+    state.config.widgetPositions[state.selectedWidget] = {
+      ...cur,
+      rotation: clampedDeg,
+    };
+    if (!state.config.elementStyles) state.config.elementStyles = {};
+    if (!state.config.elementStyles[state.selectedWidget]) state.config.elementStyles[state.selectedWidget] = {};
+    state.config.elementStyles[state.selectedWidget].rotation = clampedDeg;
+
+    if (rotSlider) rotSlider.value = clampedDeg;
+    if (rotInput) rotInput.value = clampedDeg;
+    if (rotVal) rotVal.textContent = `${clampedDeg}°`;
+
+    const inspSlider = document.getElementById('inspectorWidgetRotationSlider');
+    const inspInput = document.getElementById('inspectorWidgetRotationInput');
+    const inspVal = document.getElementById('inspectorWidgetRotationVal');
+    if (inspSlider) inspSlider.value = clampedDeg;
+    if (inspInput) inspInput.value = clampedDeg;
+    if (inspVal) inspVal.textContent = `${clampedDeg}°`;
+
+    triggerRender();
+    updateGizmoBox();
+  };
+
+  if (rotSlider) {
+    rotSlider.addEventListener('input', (e) => onRotationChange(parseFloat(e.target.value) || 0));
+    rotSlider.addEventListener('change', () => pushUndoSnapshot());
+  }
+  if (rotInput) {
+    rotInput.addEventListener('input', (e) => onRotationChange(parseFloat(e.target.value) || 0));
+    rotInput.addEventListener('change', () => pushUndoSnapshot());
+  }
+  if (resetRotBtn) {
+    resetRotBtn.addEventListener('click', () => {
+      onRotationChange(0, true);
+      showToast('Reset widget rotation to 0°');
+    });
+  }
+
+  const rotPresets = document.querySelectorAll('.widget-rot-preset');
+  rotPresets.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const deg = parseFloat(btn.dataset.rot) || 0;
+      onRotationChange(deg, true);
+      showToast(`Set rotation to ${deg}°`);
+    });
+  });
 
   const centerBtn = document.getElementById('centerSelectedWidgetBtn');
   if (centerBtn) {
@@ -2492,6 +2767,8 @@ function setupHeaderTemplateControls() {
         { value: 'running-bib-header', label: 'Marathon Race Bib Header (Bib Number & Stamped Seal)' },
         { value: 'broadcast-lowerthird', label: 'Esports / TV Broadcast Banner (Lower-Third Live Ribbon)' },
         { value: 'architect-monolith', label: 'Architectural Monolith (Big Calendar Block & Condensed Type)' },
+        { value: 'speed-chaser-bracket', label: 'Aerodynamic Speed Bracket (Racing Flags & Split Notch)' },
+        { value: 'editorial-vogue-minimal', label: 'Vogue Editorial (High-Fashion Serif & Golden Border Accent)' },
       ],
     },
     map: {
@@ -2512,6 +2789,8 @@ function setupHeaderTemplateControls() {
         { value: 'cyber-wireframe', label: 'Cyber Grid & Compass HUD (Telemetry Grid & Coordinates)' },
         { value: 'radar-screen', label: 'Tactical Radar Screen (Concentric Radar Rings & Beam)' },
         { value: 'vintage-topo-map', label: 'Topographic Elevation Contours (Organic Terrain Rings)' },
+        { value: 'isometric-shadow-track', label: 'Isometric 3D Track (Extruded Ground Shadow & Beacon)' },
+        { value: 'neon-wire-matrix', label: 'Neon Wireframe Matrix (Vector Grid & Digital Altitude Crossings)' },
       ],
     },
     hero: {
@@ -2521,6 +2800,7 @@ function setupHeaderTemplateControls() {
       hasMetricSelect: true,
       options: [
         { value: 'mega', label: 'Mega Athletic Display' },
+        { value: 'magazine-headline', label: 'Magazine Headline (Bold cover layout)' },
         { value: 'centered-radial-pod', label: 'Centered Radial Stadium Pod (Glowing Halo & Unit Badge)' },
         { value: 'centered-stadium-capsule', label: 'Centered Stadium Capsule (Pill Frame & Centered Stack)' },
         { value: 'centered-monolith', label: 'Centered Monolith (Ultra Bold Typography & Neon Underline)' },
@@ -2540,6 +2820,8 @@ function setupHeaderTemplateControls() {
         { value: 'precision-hud-gauge', label: 'Precision Arc Gauge HUD (Dual Calibrated Dials)' },
         { value: 'tactical-crosshair', label: 'Tactical Crosshair Optic (Reticle & Corner Anchors)' },
         { value: 'angled-speed-slash', label: 'Dynamic Speed Slash (Athletic Slanted Gradient)' },
+        { value: 'kinetic-bold-slash', label: 'Kinetic Racing Split (45° High-Contrast Slanted Plate)' },
+        { value: 'neon-pulse-ring', label: 'Neon Pulse Halo (Radial Orbit Ring & Center Focal Stat)' },
       ],
     },
     metrics: {
@@ -2572,6 +2854,8 @@ function setupHeaderTemplateControls() {
         { value: 'horizontal-chips', label: 'Horizontal Stat Chips (Icon + Label + Value inline)' },
         { value: 'horizontal-slash-minimal', label: 'Horizontal Minimalist Slash (Clean Floating)' },
         { value: 'horizontal-linear-cards', label: 'Horizontal Leaderboard Rows (Left/Right)' },
+        { value: 'cyber-hex-matrix', label: 'Cyber Hexagon Honeycomb (Chamfered Tech Cells)' },
+        { value: 'minimal-wire-strip', label: 'Single-Line Wireframe Strip (Ultra-Thin Hairline Stream)' },
       ],
     },
     splits: {
@@ -2591,6 +2875,8 @@ function setupHeaderTemplateControls() {
         { value: 'vertical-split-cards', label: 'Vertical Split Cards (Stacked Interval Tiles with Delta)' },
         { value: 'split-ladder-timeline', label: 'Vertical Route Timeline (Mile/KM Route Wire)' },
         { value: 'compact-dot-matrix', label: 'Compact Pace Dot Matrix (Pace Intensity Grid)' },
+        { value: 'neon-speed-wave', label: 'Neon Speed Wave (Continuous Area Curve & Split Nodes)' },
+        { value: 'minimal-dot-timeline', label: 'Horizontal Pulse Track (Stepped Beads & Fastest Pill)' },
       ],
     },
     splitHighlight: {
@@ -2606,6 +2892,8 @@ function setupHeaderTemplateControls() {
         { value: 'polaroid-clip', label: 'Paper Note with Paperclip' },
         { value: 'trophy-cup', label: 'Trophy Podium Banner (Gold Ribbon & Fast Split)' },
         { value: 'split-terminal', label: 'Digital Split Terminal (Monospace Code Prompt)' },
+        { value: 'speed-record-banner', label: 'Golden Laurel Record Plaque (Embossed Wreath & Gold Star)' },
+        { value: 'minimal-focus-tag', label: 'Minimalist Floating Focus Tag (Ultra-Clean Monogram Badge)' },
       ],
     },
     elevation: {
@@ -2622,6 +2910,8 @@ function setupHeaderTemplateControls() {
         { value: 'mountain-peaks', label: 'Mountain Peaks & Summit Flag' },
         { value: 'stepped-bars', label: 'Stepped Altitude Columns (Quantized Terrain Bars)' },
         { value: 'dual-fill', label: 'Dual-Zone Climb & Descent Gradient (Ascent vs Descent)' },
+        { value: 'stepped-elevation-terrace', label: 'Stepped Topo Terrace (Stratified Altitude Slabs)' },
+        { value: 'cyber-altitude-grid', label: 'Cyber Altitude Grid (Matrix Wireframe & Summit Beacon)' },
       ],
     },
     paceGraph: {
@@ -2636,6 +2926,8 @@ function setupHeaderTemplateControls() {
         { value: 'line', label: 'Crisp High-Precision Line' },
         { value: 'gradient-zone', label: 'Multi-Zone Color Fill' },
         { value: 'stepped-splits', label: 'Stepped Splits with Avg Pace Dash' },
+        { value: 'candlestick-pace-bars', label: 'Pace Range Candlesticks (High/Low Interval Candles)' },
+        { value: 'neon-speed-ribbon', label: 'Neon Speed Ribbon (Dual-Stroke Glowing Stream)' },
       ],
     },
     hrGraph: {
@@ -2650,6 +2942,8 @@ function setupHeaderTemplateControls() {
         { value: 'ecg-wave', label: 'Colored ECG Wave (Zones)' },
         { value: 'zone-bars', label: '5-Zone Vertical Frequency Bars' },
         { value: 'pulse-glow', label: 'Glowing Pulse Wave with Alert' },
+        { value: 'ecg-cyber-pulse', label: 'ECG Bio-Telemetry Monitor (High-Frequency Pulse Grid)' },
+        { value: 'cardiac-zone-flame', label: 'Cardiac Thermal Heatmap (BPM Combustion Gradient)' },
       ],
     },
     hrBadge: {
@@ -2666,6 +2960,8 @@ function setupHeaderTemplateControls() {
         { value: 'compact-tag', label: 'Smartwatch Complication Tag' },
         { value: 'vertical-hr-thermometer', label: 'Vertical Zone Thermometer (5-Zone Meter Column)' },
         { value: 'tactical-ecg-card', label: 'ECG Telemetry Strip (Oscilloscope CRT Strip)' },
+        { value: 'minimal-cardiac-pill', label: 'Ultra-Minimal Cardiac Pill (Floating Pulse & BPM)' },
+        { value: 'cyber-hud-cardiac-gauge', label: 'Cyber Tactical Ring Gauge (Dual Segmented Arcs & Target Zone)' },
       ],
     },
     brand: {
@@ -3160,7 +3456,14 @@ function setupElementInspectorControls() {
       { key: 'title', label: 'Split Header Title' },
       { key: 'badge', label: 'Fastest Split Highlight Pill' },
       { key: 'lapLabels', label: 'All Lap Labels (L1, L2, KM 1...)' },
-      { key: 'paceLabels', label: 'All Split Paces (Pace Readouts)' },
+      { key: 'pace', label: 'All Split Paces (Pace Readouts)' },
+      { key: 'avgHr', label: 'All Split Heart Rates (♥ / HR Readouts)' },
+      { key: 'time', label: 'All Split Times (Duration Readouts)' },
+      { key: 'delta', label: 'All Split Deltas (+/- Pace Readouts)' },
+      { key: 'elevation', label: 'All Split Elevations (Gain/Loss Readouts)' },
+      { key: 'cadence', label: 'All Split Cadences (SPM Readouts)' },
+      { key: 'maxHr', label: 'All Split Max HR Readouts' },
+      { key: 'minHr', label: 'All Split Min HR Readouts' },
       { key: 'bars', label: 'All Split Bars / Columns' },
       { key: 'headerSplit', label: 'Column Header: Split' },
       { key: 'headerTime', label: 'Column Header: Time' },
@@ -3285,6 +3588,11 @@ function setupElementInspectorControls() {
         base.push(
           { key: `split_lap_${idx}`, label: `Split ${idx + 1} Lap Label (${sName})` },
           { key: `split_pace_${idx}`, label: `Split ${idx + 1} Pace Text (${pStr})` },
+          { key: `split_avgHr_${idx}`, label: `Split ${idx + 1} Heart Rate (HR)` },
+          { key: `split_time_${idx}`, label: `Split ${idx + 1} Time` },
+          { key: `split_delta_${idx}`, label: `Split ${idx + 1} Delta` },
+          { key: `split_elevation_${idx}`, label: `Split ${idx + 1} Elevation` },
+          { key: `split_cadence_${idx}`, label: `Split ${idx + 1} Cadence` },
           { key: `split_bar_${idx}`, label: `Split ${idx + 1} Bar / Column (${sName})` },
           { key: `split_${idx}`, label: `Split ${idx + 1} Entire Item (${sName})` }
         );
@@ -3615,6 +3923,30 @@ function setupElementInspectorControls() {
       }
     }
 
+    // Sync Secondary Metrics Item Toggles Container in Inspector
+    const insMetricsItemsContainer = document.getElementById('inspectorMetricsItemsContainer');
+    if (insMetricsItemsContainer) {
+      if (cat === 'metrics' || targetKey === 'metrics' || targetKey.startsWith('metrics')) {
+        insMetricsItemsContainer.style.display = 'block';
+        const metricBinds = [
+          { key: 'metricShowTime', id: 'insToggleMetricTime', def: true },
+          { key: 'metricShowPace', id: 'insToggleMetricPace', def: true },
+          { key: 'metricShowHr', id: 'insToggleMetricHr', def: true },
+          { key: 'metricShowElevation', id: 'insToggleMetricElevation', def: true },
+          { key: 'metricShowCadence', id: 'insToggleMetricCadence', def: true },
+          { key: 'metricShowCalories', id: 'insToggleMetricCalories', def: true },
+          { key: 'metricShowDistance', id: 'insToggleMetricDistance', def: false },
+          { key: 'metricShowBestPace', id: 'insToggleMetricBestPace', def: false },
+        ];
+        metricBinds.forEach(({ key, id, def }) => {
+          const el = document.getElementById(id);
+          if (el) el.checked = state.config[key] !== undefined ? Boolean(state.config[key]) : def;
+        });
+      } else {
+        insMetricsItemsContainer.style.display = 'none';
+      }
+    }
+
     const currentPart = subPartSelect ? subPartSelect.value : 'widget';
 
     // Show top Reintroduce button if any elements in this widget are deleted
@@ -3736,6 +4068,39 @@ function setupElementInspectorControls() {
           subElemColorInput.value = '#ffffff';
         }
       }
+
+      // Populate sub-element rotation
+      const sRot = typeof off.rotation === 'number' ? off.rotation : 0;
+      const subRotSlider = document.getElementById('inspectorSubElemRotationSlider');
+      const subRotInput = document.getElementById('inspectorSubElemRotationInput');
+      if (subRotSlider) subRotSlider.value = sRot;
+      if (subRotInput) subRotInput.value = sRot;
+
+      // Populate sub-element text shadow
+      const sShadow = off.textShadow || { enabled: false, color: '#000000', blur: 8, offsetY: 3 };
+      const subShadowToggle = document.getElementById('inspectorSubElemShadowToggle');
+      const subShadowDetails = document.getElementById('inspectorSubElemShadowDetails');
+      const subShadowColorInput = document.getElementById('inspectorSubElemShadowColorInput');
+      const subShadowBlurSlider = document.getElementById('inspectorSubElemShadowBlurSlider');
+      const subShadowOffsetYSlider = document.getElementById('inspectorSubElemShadowOffsetYSlider');
+      if (subShadowToggle) subShadowToggle.checked = !!sShadow.enabled;
+      if (subShadowDetails) subShadowDetails.style.display = sShadow.enabled ? 'block' : 'none';
+      if (subShadowColorInput) subShadowColorInput.value = sShadow.color || '#000000';
+      if (subShadowBlurSlider) subShadowBlurSlider.value = typeof sShadow.blur === 'number' ? sShadow.blur : 8;
+      if (subShadowOffsetYSlider) subShadowOffsetYSlider.value = typeof sShadow.offsetY === 'number' ? sShadow.offsetY : 3;
+
+      // Populate sub-element text outline
+      const sOutline = off.textOutline || { enabled: false, color: '#000000', width: 2 };
+      const subOutlineToggle = document.getElementById('inspectorSubElemOutlineToggle');
+      const subOutlineDetails = document.getElementById('inspectorSubElemOutlineDetails');
+      const subOutlineColorInput = document.getElementById('inspectorSubElemOutlineColorInput');
+      const subOutlineWidthSlider = document.getElementById('inspectorSubElemOutlineWidthSlider');
+      const subOutlineWidthVal = document.getElementById('inspectorSubElemOutlineWidthVal');
+      if (subOutlineToggle) subOutlineToggle.checked = !!sOutline.enabled;
+      if (subOutlineDetails) subOutlineDetails.style.display = sOutline.enabled ? 'block' : 'none';
+      if (subOutlineColorInput) subOutlineColorInput.value = sOutline.color || '#000000';
+      if (subOutlineWidthSlider) subOutlineWidthSlider.value = typeof sOutline.width === 'number' ? sOutline.width : 2;
+      if (subOutlineWidthVal) subOutlineWidthVal.textContent = `${typeof sOutline.width === 'number' ? sOutline.width : 2}px`;
     } else {
       if (bgControlsContainer) bgControlsContainer.style.display = 'none';
       if (subElemControlsContainer) subElemControlsContainer.style.display = 'none';
@@ -3777,6 +4142,49 @@ function setupElementInspectorControls() {
     const op = typeof st.opacity === 'number' ? st.opacity : 100;
     if (opacitySlider) opacitySlider.value = op;
     if (opacityVal) opacityVal.textContent = `${op}%`;
+
+    // Widget rotation
+    const wRot = typeof st.rotation === 'number' ? st.rotation : ((state.config.widgetPositions && state.config.widgetPositions[targetKey] && typeof state.config.widgetPositions[targetKey].rotation === 'number') ? state.config.widgetPositions[targetKey].rotation : 0);
+    const inspRotSlider = document.getElementById('inspectorWidgetRotationSlider');
+    const inspRotInput = document.getElementById('inspectorWidgetRotationInput');
+    const inspRotVal = document.getElementById('inspectorWidgetRotationVal');
+    if (inspRotSlider) inspRotSlider.value = wRot;
+    if (inspRotInput) inspRotInput.value = wRot;
+    if (inspRotVal) inspRotVal.textContent = `${wRot}°`;
+
+    // Widget text shadow
+    const wShadow = st.textShadow || { enabled: false, color: '#000000', blur: 8, offsetX: 0, offsetY: 3 };
+    const inspShadowToggle = document.getElementById('inspectorTextShadowToggle');
+    const inspShadowDetails = document.getElementById('inspectorTextShadowDetails');
+    const inspShadowColorInput = document.getElementById('inspectorTextShadowColorInput');
+    const inspShadowColorHex = document.getElementById('inspectorTextShadowColorHex');
+    const inspShadowBlurSlider = document.getElementById('inspectorTextShadowBlurSlider');
+    const inspShadowBlurVal = document.getElementById('inspectorTextShadowBlurVal');
+    const inspShadowOffsetYSlider = document.getElementById('inspectorTextShadowOffsetYSlider');
+    const inspShadowOffsetYVal = document.getElementById('inspectorTextShadowOffsetYVal');
+    if (inspShadowToggle) inspShadowToggle.checked = !!wShadow.enabled;
+    if (inspShadowDetails) inspShadowDetails.style.display = wShadow.enabled ? 'block' : 'none';
+    if (inspShadowColorInput) inspShadowColorInput.value = (wShadow.color && wShadow.color.startsWith('#')) ? wShadow.color : '#000000';
+    if (inspShadowColorHex) inspShadowColorHex.value = wShadow.color || '#000000';
+    if (inspShadowBlurSlider) inspShadowBlurSlider.value = typeof wShadow.blur === 'number' ? wShadow.blur : 8;
+    if (inspShadowBlurVal) inspShadowBlurVal.textContent = `${typeof wShadow.blur === 'number' ? wShadow.blur : 8}px`;
+    if (inspShadowOffsetYSlider) inspShadowOffsetYSlider.value = typeof wShadow.offsetY === 'number' ? wShadow.offsetY : 3;
+    if (inspShadowOffsetYVal) inspShadowOffsetYVal.textContent = `${typeof wShadow.offsetY === 'number' ? wShadow.offsetY : 3}px`;
+
+    // Widget text outline
+    const wOutline = st.textOutline || { enabled: false, color: '#000000', width: 2 };
+    const inspOutlineToggle = document.getElementById('inspectorTextOutlineToggle');
+    const inspOutlineDetails = document.getElementById('inspectorTextOutlineDetails');
+    const inspOutlineColorInput = document.getElementById('inspectorTextOutlineColorInput');
+    const inspOutlineColorHex = document.getElementById('inspectorTextOutlineColorHex');
+    const inspOutlineWidthSlider = document.getElementById('inspectorTextOutlineWidthSlider');
+    const inspOutlineWidthVal = document.getElementById('inspectorTextOutlineWidthVal');
+    if (inspOutlineToggle) inspOutlineToggle.checked = !!wOutline.enabled;
+    if (inspOutlineDetails) inspOutlineDetails.style.display = wOutline.enabled ? 'block' : 'none';
+    if (inspOutlineColorInput) inspOutlineColorInput.value = (wOutline.color && wOutline.color.startsWith('#')) ? wOutline.color : '#000000';
+    if (inspOutlineColorHex) inspOutlineColorHex.value = wOutline.color || '#000000';
+    if (inspOutlineWidthSlider) inspOutlineWidthSlider.value = typeof wOutline.width === 'number' ? wOutline.width : 2;
+    if (inspOutlineWidthVal) inspOutlineWidthVal.textContent = `${typeof wOutline.width === 'number' ? wOutline.width : 2}px`;
 
     // Render in-context dynamic text editor for current element
     renderInspectorTextEditor(targetKey);
@@ -4549,7 +4957,7 @@ function setupElementInspectorControls() {
     });
   }
 
-  if (opacitySlider) {
+    if (opacitySlider) {
     opacitySlider.addEventListener('input', (e) => {
       const val = parseInt(e.target.value, 10);
       if (opacityVal) opacityVal.textContent = `${val}%`;
@@ -4557,6 +4965,168 @@ function setupElementInspectorControls() {
       st.opacity = val;
       triggerRender();
     });
+  }
+
+  // Inspector Widget-level Rotation Controls
+  const inspRotSlider = document.getElementById('inspectorWidgetRotationSlider');
+  const inspRotInput = document.getElementById('inspectorWidgetRotationInput');
+  const inspRotVal = document.getElementById('inspectorWidgetRotationVal');
+  const inspResetRotBtn = document.getElementById('inspectorWidgetResetRotBtn');
+
+  const onInspWidgetRotChange = (deg, pushHistory = false) => {
+    const key = getActiveKey();
+    if (!key) return;
+    if (pushHistory) pushUndoSnapshot();
+    const clamped = Math.max(-180, Math.min(180, Math.round(deg)));
+    const st = getStyleObj();
+    st.rotation = clamped;
+    if (!state.config.widgetPositions) state.config.widgetPositions = {};
+    if (!state.config.widgetPositions[key]) {
+      const b = renderer.widgetBounds ? renderer.widgetBounds[key] : null;
+      if (b) state.config.widgetPositions[key] = { ...b };
+    }
+    if (state.config.widgetPositions[key]) {
+      state.config.widgetPositions[key].rotation = clamped;
+    }
+
+    if (inspRotSlider) inspRotSlider.value = clamped;
+    if (inspRotInput) inspRotInput.value = clamped;
+    if (inspRotVal) inspRotVal.textContent = `${clamped}°`;
+
+    const wTabSlider = document.getElementById('widgetRotationSlider');
+    const wTabInput = document.getElementById('widgetRotationInput');
+    const wTabVal = document.getElementById('widgetRotationVal');
+    if (wTabSlider) wTabSlider.value = clamped;
+    if (wTabInput) wTabInput.value = clamped;
+    if (wTabVal) wTabVal.textContent = `${clamped}°`;
+
+    triggerRender();
+    updateGizmoBox();
+  };
+
+  if (inspRotSlider) {
+    inspRotSlider.addEventListener('input', (e) => onInspWidgetRotChange(parseFloat(e.target.value) || 0));
+    inspRotSlider.addEventListener('change', () => pushUndoSnapshot());
+  }
+  if (inspRotInput) {
+    inspRotInput.addEventListener('input', (e) => onInspWidgetRotChange(parseFloat(e.target.value) || 0));
+    inspRotInput.addEventListener('change', () => pushUndoSnapshot());
+  }
+  if (inspResetRotBtn) {
+    inspResetRotBtn.addEventListener('click', () => {
+      onInspWidgetRotChange(0, true);
+      showToast('Reset widget rotation to 0°');
+    });
+  }
+
+  // Inspector Widget-level Text Shadow Controls
+  const inspShadowToggle = document.getElementById('inspectorTextShadowToggle');
+  const inspShadowDetails = document.getElementById('inspectorTextShadowDetails');
+  const inspShadowColorInput = document.getElementById('inspectorTextShadowColorInput');
+  const inspShadowColorHex = document.getElementById('inspectorTextShadowColorHex');
+  const inspShadowBlurSlider = document.getElementById('inspectorTextShadowBlurSlider');
+  const inspShadowBlurVal = document.getElementById('inspectorTextShadowBlurVal');
+  const inspShadowOffsetYSlider = document.getElementById('inspectorTextShadowOffsetYSlider');
+  const inspShadowOffsetYVal = document.getElementById('inspectorTextShadowOffsetYVal');
+
+  if (inspShadowToggle) {
+    inspShadowToggle.addEventListener('change', (e) => {
+      pushUndoSnapshot();
+      const st = getStyleObj();
+      if (!st.textShadow) st.textShadow = { enabled: false, color: '#000000', blur: 8, offsetX: 0, offsetY: 3 };
+      st.textShadow.enabled = e.target.checked;
+      if (inspShadowDetails) inspShadowDetails.style.display = e.target.checked ? 'block' : 'none';
+      triggerRender();
+    });
+  }
+  if (inspShadowColorInput) {
+    inspShadowColorInput.addEventListener('input', (e) => {
+      const st = getStyleObj();
+      if (!st.textShadow) st.textShadow = { enabled: true, color: '#000000', blur: 8, offsetX: 0, offsetY: 3 };
+      st.textShadow.color = e.target.value;
+      if (inspShadowColorHex) inspShadowColorHex.value = e.target.value;
+      triggerRender();
+    });
+    inspShadowColorInput.addEventListener('change', () => pushUndoSnapshot());
+  }
+  if (inspShadowColorHex) {
+    inspShadowColorHex.addEventListener('input', (e) => {
+      const st = getStyleObj();
+      if (!st.textShadow) st.textShadow = { enabled: true, color: '#000000', blur: 8, offsetX: 0, offsetY: 3 };
+      st.textShadow.color = e.target.value;
+      if (e.target.value.startsWith('#') && inspShadowColorInput) inspShadowColorInput.value = e.target.value;
+      triggerRender();
+    });
+    inspShadowColorHex.addEventListener('change', () => pushUndoSnapshot());
+  }
+  if (inspShadowBlurSlider) {
+    inspShadowBlurSlider.addEventListener('input', (e) => {
+      const st = getStyleObj();
+      if (!st.textShadow) st.textShadow = { enabled: true, color: '#000000', blur: 8, offsetX: 0, offsetY: 3 };
+      st.textShadow.blur = parseInt(e.target.value, 10);
+      if (inspShadowBlurVal) inspShadowBlurVal.textContent = `${e.target.value}px`;
+      triggerRender();
+    });
+    inspShadowBlurSlider.addEventListener('change', () => pushUndoSnapshot());
+  }
+  if (inspShadowOffsetYSlider) {
+    inspShadowOffsetYSlider.addEventListener('input', (e) => {
+      const st = getStyleObj();
+      if (!st.textShadow) st.textShadow = { enabled: true, color: '#000000', blur: 8, offsetX: 0, offsetY: 3 };
+      st.textShadow.offsetY = parseInt(e.target.value, 10);
+      if (inspShadowOffsetYVal) inspShadowOffsetYVal.textContent = `${e.target.value}px`;
+      triggerRender();
+    });
+    inspShadowOffsetYSlider.addEventListener('change', () => pushUndoSnapshot());
+  }
+
+  // Inspector Widget-level Text Outline Controls
+  const inspOutlineToggle = document.getElementById('inspectorTextOutlineToggle');
+  const inspOutlineDetails = document.getElementById('inspectorTextOutlineDetails');
+  const inspOutlineColorInput = document.getElementById('inspectorTextOutlineColorInput');
+  const inspOutlineColorHex = document.getElementById('inspectorTextOutlineColorHex');
+  const inspOutlineWidthSlider = document.getElementById('inspectorTextOutlineWidthSlider');
+  const inspOutlineWidthVal = document.getElementById('inspectorTextOutlineWidthVal');
+
+  if (inspOutlineToggle) {
+    inspOutlineToggle.addEventListener('change', (e) => {
+      pushUndoSnapshot();
+      const st = getStyleObj();
+      if (!st.textOutline) st.textOutline = { enabled: false, color: '#000000', width: 2 };
+      st.textOutline.enabled = e.target.checked;
+      if (inspOutlineDetails) inspOutlineDetails.style.display = e.target.checked ? 'block' : 'none';
+      triggerRender();
+    });
+  }
+  if (inspOutlineColorInput) {
+    inspOutlineColorInput.addEventListener('input', (e) => {
+      const st = getStyleObj();
+      if (!st.textOutline) st.textOutline = { enabled: true, color: '#000000', width: 2 };
+      st.textOutline.color = e.target.value;
+      if (inspOutlineColorHex) inspOutlineColorHex.value = e.target.value;
+      triggerRender();
+    });
+    inspOutlineColorInput.addEventListener('change', () => pushUndoSnapshot());
+  }
+  if (inspOutlineColorHex) {
+    inspOutlineColorHex.addEventListener('input', (e) => {
+      const st = getStyleObj();
+      if (!st.textOutline) st.textOutline = { enabled: true, color: '#000000', width: 2 };
+      st.textOutline.color = e.target.value;
+      if (e.target.value.startsWith('#') && inspOutlineColorInput) inspOutlineColorInput.value = e.target.value;
+      triggerRender();
+    });
+    inspOutlineColorHex.addEventListener('change', () => pushUndoSnapshot());
+  }
+  if (inspOutlineWidthSlider) {
+    inspOutlineWidthSlider.addEventListener('input', (e) => {
+      const st = getStyleObj();
+      if (!st.textOutline) st.textOutline = { enabled: true, color: '#000000', width: 2 };
+      st.textOutline.width = parseFloat(e.target.value);
+      if (inspOutlineWidthVal) inspOutlineWidthVal.textContent = `${e.target.value}px`;
+      triggerRender();
+    });
+    inspOutlineWidthSlider.addEventListener('change', () => pushUndoSnapshot());
   }
 
   if (resetBtn) {
@@ -4704,6 +5274,122 @@ function setupElementInspectorControls() {
   bindSubElemSliderInput(subElemXSlider, subElemXInput, 'x');
   bindSubElemSliderInput(subElemYSlider, subElemYInput, 'y');
   bindSubElemSliderInput(subElemZSlider, subElemZInput, 'z');
+
+  // Sub-element Rotation Controls
+  const subElemRotSlider = document.getElementById('inspectorSubElemRotationSlider');
+  const subElemRotInput = document.getElementById('inspectorSubElemRotationInput');
+  const subElemResetRotBtn = document.getElementById('inspectorSubElemResetRotBtn');
+
+  if (subElemRotSlider) {
+    subElemRotSlider.addEventListener('input', (e) => {
+      const val = parseInt(e.target.value, 10) || 0;
+      if (subElemRotInput) subElemRotInput.value = val;
+      getSubElemObj().rotation = val;
+      triggerRender();
+    });
+    subElemRotSlider.addEventListener('change', () => pushUndoSnapshot());
+  }
+  if (subElemRotInput) {
+    subElemRotInput.addEventListener('input', (e) => {
+      const val = parseInt(e.target.value, 10) || 0;
+      if (subElemRotSlider) subElemRotSlider.value = val;
+      getSubElemObj().rotation = val;
+      triggerRender();
+    });
+    subElemRotInput.addEventListener('change', () => pushUndoSnapshot());
+  }
+  if (subElemResetRotBtn) {
+    subElemResetRotBtn.addEventListener('click', () => {
+      pushUndoSnapshot();
+      getSubElemObj().rotation = 0;
+      if (subElemRotSlider) subElemRotSlider.value = 0;
+      if (subElemRotInput) subElemRotInput.value = 0;
+      triggerRender();
+      showToast('Reset item rotation to 0°');
+    });
+  }
+
+  // Sub-element Text Shadow Controls
+  const subShadowToggle = document.getElementById('inspectorSubElemShadowToggle');
+  const subShadowDetails = document.getElementById('inspectorSubElemShadowDetails');
+  const subShadowColorInput = document.getElementById('inspectorSubElemShadowColorInput');
+  const subShadowBlurSlider = document.getElementById('inspectorSubElemShadowBlurSlider');
+  const subShadowOffsetYSlider = document.getElementById('inspectorSubElemShadowOffsetYSlider');
+
+  if (subShadowToggle) {
+    subShadowToggle.addEventListener('change', (e) => {
+      pushUndoSnapshot();
+      const obj = getSubElemObj();
+      if (!obj.textShadow) obj.textShadow = { enabled: false, color: '#000000', blur: 8, offsetX: 0, offsetY: 3 };
+      obj.textShadow.enabled = e.target.checked;
+      if (subShadowDetails) subShadowDetails.style.display = e.target.checked ? 'block' : 'none';
+      triggerRender();
+    });
+  }
+  if (subShadowColorInput) {
+    subShadowColorInput.addEventListener('input', (e) => {
+      const obj = getSubElemObj();
+      if (!obj.textShadow) obj.textShadow = { enabled: true, color: '#000000', blur: 8, offsetX: 0, offsetY: 3 };
+      obj.textShadow.color = e.target.value;
+      triggerRender();
+    });
+    subShadowColorInput.addEventListener('change', () => pushUndoSnapshot());
+  }
+  if (subShadowBlurSlider) {
+    subShadowBlurSlider.addEventListener('input', (e) => {
+      const obj = getSubElemObj();
+      if (!obj.textShadow) obj.textShadow = { enabled: true, color: '#000000', blur: 8, offsetX: 0, offsetY: 3 };
+      obj.textShadow.blur = parseInt(e.target.value, 10);
+      triggerRender();
+    });
+    subShadowBlurSlider.addEventListener('change', () => pushUndoSnapshot());
+  }
+  if (subShadowOffsetYSlider) {
+    subShadowOffsetYSlider.addEventListener('input', (e) => {
+      const obj = getSubElemObj();
+      if (!obj.textShadow) obj.textShadow = { enabled: true, color: '#000000', blur: 8, offsetX: 0, offsetY: 3 };
+      obj.textShadow.offsetY = parseInt(e.target.value, 10);
+      triggerRender();
+    });
+    subShadowOffsetYSlider.addEventListener('change', () => pushUndoSnapshot());
+  }
+
+  // Sub-element Text Outline Controls
+  const subOutlineToggle = document.getElementById('inspectorSubElemOutlineToggle');
+  const subOutlineDetails = document.getElementById('inspectorSubElemOutlineDetails');
+  const subOutlineColorInput = document.getElementById('inspectorSubElemOutlineColorInput');
+  const subOutlineWidthSlider = document.getElementById('inspectorSubElemOutlineWidthSlider');
+  const subOutlineWidthVal = document.getElementById('inspectorSubElemOutlineWidthVal');
+
+  if (subOutlineToggle) {
+    subOutlineToggle.addEventListener('change', (e) => {
+      pushUndoSnapshot();
+      const obj = getSubElemObj();
+      if (!obj.textOutline) obj.textOutline = { enabled: false, color: '#000000', width: 2 };
+      obj.textOutline.enabled = e.target.checked;
+      if (subOutlineDetails) subOutlineDetails.style.display = e.target.checked ? 'block' : 'none';
+      triggerRender();
+    });
+  }
+  if (subOutlineColorInput) {
+    subOutlineColorInput.addEventListener('input', (e) => {
+      const obj = getSubElemObj();
+      if (!obj.textOutline) obj.textOutline = { enabled: true, color: '#000000', width: 2 };
+      obj.textOutline.color = e.target.value;
+      triggerRender();
+    });
+    subOutlineColorInput.addEventListener('change', () => pushUndoSnapshot());
+  }
+  if (subOutlineWidthSlider) {
+    subOutlineWidthSlider.addEventListener('input', (e) => {
+      const obj = getSubElemObj();
+      if (!obj.textOutline) obj.textOutline = { enabled: true, color: '#000000', width: 2 };
+      obj.textOutline.width = parseFloat(e.target.value);
+      if (subOutlineWidthVal) subOutlineWidthVal.textContent = `${e.target.value}px`;
+      triggerRender();
+    });
+    subOutlineWidthSlider.addEventListener('change', () => pushUndoSnapshot());
+  }
 
   if (subElemFontFamily) {
     subElemFontFamily.addEventListener('change', (e) => {
@@ -5178,6 +5864,21 @@ function renderCustomTextsList() {
           <input type="color" class="custom-text-color" value="${item.color || '#ffffff'}" style="width: 100%; height: 28px; border: none; border-radius: 4px; cursor: pointer; background: transparent;">
         </div>
       </div>
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; font-size: 0.72rem; background: rgba(0,0,0,0.25); padding: 4px 6px; border-radius: 4px;">
+        <div style="display: flex; align-items: center; gap: 4px;">
+          <span style="color: var(--text-muted); font-size: 0.68rem;">Rot:</span>
+          <input type="number" class="form-input custom-text-rot" value="${typeof item.rotation === 'number' ? item.rotation : 0}" min="-180" max="180" step="1" style="width: 48px; padding: 1px 3px; font-size: 0.72rem; text-align: right;">
+          <span style="color: var(--text-muted); font-size: 0.68rem;">°</span>
+        </div>
+        <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; color: var(--text-normal); margin-bottom: 0;">
+          <input type="checkbox" class="custom-text-shadow-toggle" ${(item.textShadow && item.textShadow.enabled) ? 'checked' : ''}>
+          <span>Shadow</span>
+        </label>
+        <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; color: var(--text-normal); margin-bottom: 0;">
+          <input type="checkbox" class="custom-text-outline-toggle" ${(item.textOutline && item.textOutline.enabled) ? 'checked' : ''}>
+          <span>Outline</span>
+        </label>
+      </div>
     `;
 
     // Row click selects widget
@@ -5209,6 +5910,27 @@ function renderCustomTextsList() {
     const colorInput = row.querySelector('.custom-text-color');
     colorInput.addEventListener('input', (e) => {
       item.color = e.target.value;
+      triggerRender();
+    });
+
+    const rotInput = row.querySelector('.custom-text-rot');
+    rotInput.addEventListener('input', (e) => {
+      item.rotation = parseInt(e.target.value, 10) || 0;
+      triggerRender();
+      if (state.selectedWidget === item.id) updateGizmoBox();
+    });
+
+    const shadowToggle = row.querySelector('.custom-text-shadow-toggle');
+    shadowToggle.addEventListener('change', (e) => {
+      if (!item.textShadow) item.textShadow = { enabled: false, color: '#000000', blur: 8, offsetX: 0, offsetY: 3 };
+      item.textShadow.enabled = e.target.checked;
+      triggerRender();
+    });
+
+    const outlineToggle = row.querySelector('.custom-text-outline-toggle');
+    outlineToggle.addEventListener('change', (e) => {
+      if (!item.textOutline) item.textOutline = { enabled: false, color: '#000000', width: 2 };
+      item.textOutline.enabled = e.target.checked;
       triggerRender();
     });
 
@@ -5325,6 +6047,25 @@ function setupGizmoController() {
     });
   }
 
+  const isPointInWidget = (px, py, b) => {
+    if (!b) return false;
+    const rot = (typeof b.rotation === 'number') ? b.rotation : 0;
+    if (rot === 0) {
+      return px >= b.x && px <= b.x + b.width && py >= b.y && py <= b.y + b.height;
+    }
+    const cx = b.x + b.width / 2;
+    const cy = b.y + b.height / 2;
+    const rad = -rot * Math.PI / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    const dx = px - cx;
+    const dy = py - cy;
+    const localX = cx + (dx * cos - dy * sin);
+    const localY = cy + (dx * sin + dy * cos);
+    return localX >= b.x && localX <= b.x + b.width && localY >= b.y && localY <= b.y + b.height;
+  };
+  window.isPointInWidget = isPointInWidget;
+
   // Direct Canvas Hit-Testing for Selection & Dragging
   const handlePointerDown = (clientX, clientY) => {
     if (!state.isInteractiveLayout) return;
@@ -5341,7 +6082,7 @@ function setupGizmoController() {
 
     for (const [key, b] of entries) {
       if (key === '__bg_photo__') continue; // Don't let background photo steal clicks from widgets
-      if (clickX >= b.x && clickX <= b.x + b.width && clickY >= b.y && clickY <= b.y + b.height) {
+      if (isPointInWidget(clickX, clickY, b)) {
         foundKey = key;
         break;
       }
@@ -5387,7 +6128,7 @@ function setupGizmoController() {
 
       for (const [key, b] of entries) {
         if (key === '__bg_photo__') continue;
-        if (clickX >= b.x && clickX <= b.x + b.width && clickY >= b.y && clickY <= b.y + b.height) {
+        if (isPointInWidget(clickX, clickY, b)) {
           foundKey = key;
           break;
         }
@@ -5435,7 +6176,7 @@ function setupGizmoController() {
       const bounds = renderer.widgetBounds || {};
       for (const [key, b] of Object.entries(bounds)) {
         if (key === '__bg_photo__') continue;
-        if (clickX >= b.x && clickX <= b.x + b.width && clickY >= b.y && clickY <= b.y + b.height) {
+        if (isPointInWidget(clickX, clickY, b)) {
           overForeground = true;
           break;
         }
@@ -5444,11 +6185,24 @@ function setupGizmoController() {
     }
   });
 
-  // Handles Resize Drag
+  // Handles Resize & Rotate Drag
   const handles = gizmoBox.querySelectorAll('.gizmo-handle');
   handles.forEach((h) => {
     const startResize = (clientX, clientY) => {
       pushUndoSnapshot();
+      if (h.dataset.handle === 'rot') {
+        activeDragMode = 'rotate';
+        const b = renderer.widgetBounds[state.selectedWidget];
+        if (!b) return;
+        const canvasRect = canvas.getBoundingClientRect();
+        const scale = canvasRect.width / canvas.width;
+        dragCenterX = canvasRect.left + (b.x + b.width / 2) * scale;
+        dragCenterY = canvasRect.top + (b.y + b.height / 2) * scale;
+        dragInitialRot = (typeof b.rotation === 'number') ? b.rotation : 0;
+        isInteracting = true;
+        return;
+      }
+
       if (state.selectedWidget === '__bg_photo__') {
         activeDragMode = 'photo_zoom';
         dragStartX = clientX;
@@ -5506,6 +6260,48 @@ function setupGizmoController() {
   // Global Pointer Move & Up
   const handlePointerMove = (clientX, clientY) => {
     if (!isInteracting || !state.selectedWidget) return;
+
+    if (activeDragMode === 'rotate') {
+      const dx = clientX - dragCenterX;
+      const dy = clientY - dragCenterY;
+      let deg = Math.atan2(dy, dx) * (180 / Math.PI) + 90;
+      while (deg > 180) deg -= 360;
+      while (deg < -180) deg += 360;
+      if (window._shiftKeyPressed) {
+        deg = Math.round(deg / 15) * 15;
+      } else {
+        deg = Math.round(deg);
+      }
+      if (deg > 180) deg = 180;
+      if (deg < -180) deg = -180;
+
+      const cur = state.config.widgetPositions[state.selectedWidget] || renderer.widgetBounds[state.selectedWidget] || {};
+      state.config.widgetPositions[state.selectedWidget] = {
+        ...cur,
+        rotation: deg,
+      };
+      if (!state.config.elementStyles) state.config.elementStyles = {};
+      if (!state.config.elementStyles[state.selectedWidget]) state.config.elementStyles[state.selectedWidget] = {};
+      state.config.elementStyles[state.selectedWidget].rotation = deg;
+
+      const rotSlider = document.getElementById('widgetRotationSlider');
+      const rotInput = document.getElementById('widgetRotationInput');
+      const rotVal = document.getElementById('widgetRotationVal');
+      if (rotSlider) rotSlider.value = deg;
+      if (rotInput) rotInput.value = deg;
+      if (rotVal) rotVal.textContent = `${deg}°`;
+
+      const inspSlider = document.getElementById('inspectorWidgetRotationSlider');
+      const inspInput = document.getElementById('inspectorWidgetRotationInput');
+      const inspVal = document.getElementById('inspectorWidgetRotationVal');
+      if (inspSlider) inspSlider.value = deg;
+      if (inspInput) inspInput.value = deg;
+      if (inspVal) inspVal.textContent = `${deg}°`;
+
+      triggerRender();
+      updateGizmoBox();
+      return;
+    }
 
     const rect = canvas.getBoundingClientRect();
     const scale = canvas.width / rect.width;
@@ -5620,7 +6416,7 @@ function setupGizmoController() {
     const bounds = renderer.widgetBounds || {};
     for (const [key, b] of Object.entries(bounds).reverse()) {
       if (key === '__bg_photo__') continue;
-      if (hoverX >= b.x && hoverX <= b.x + b.width && hoverY >= b.y && hoverY <= b.y + b.height) {
+      if (isPointInWidget(hoverX, hoverY, b)) {
         hoveredWidget = key;
         break;
       }
@@ -5763,6 +6559,21 @@ function selectWidget(key) {
     if (posY) { posY.value = cur.y; document.getElementById('widgetPosYVal').textContent = `${cur.y}px`; }
     if (posW) { posW.value = cur.width; document.getElementById('widgetWidthVal').textContent = `${cur.width}px`; }
     if (posH) { posH.value = cur.height; document.getElementById('widgetHeightVal').textContent = `${cur.height}px`; }
+
+    const rot = (typeof cur.rotation === 'number') ? cur.rotation : ((state.config.elementStyles && state.config.elementStyles[key] && typeof state.config.elementStyles[key].rotation === 'number') ? state.config.elementStyles[key].rotation : ((typeof b.rotation === 'number') ? b.rotation : 0));
+    const rotSlider = document.getElementById('widgetRotationSlider');
+    const rotInput = document.getElementById('widgetRotationInput');
+    const rotVal = document.getElementById('widgetRotationVal');
+    if (rotSlider) rotSlider.value = rot;
+    if (rotInput) rotInput.value = rot;
+    if (rotVal) rotVal.textContent = `${rot}°`;
+
+    const inspRotSlider = document.getElementById('inspectorWidgetRotationSlider');
+    const inspRotInput = document.getElementById('inspectorWidgetRotationInput');
+    const inspRotVal = document.getElementById('inspectorWidgetRotationVal');
+    if (inspRotSlider) inspRotSlider.value = rot;
+    if (inspRotInput) inspRotInput.value = rot;
+    if (inspRotVal) inspRotVal.textContent = `${rot}°`;
   }
 }
 
@@ -5811,11 +6622,16 @@ function updateGizmoBox() {
   gizmoBox.style.width = `${cssWidth}px`;
   gizmoBox.style.height = `${cssHeight}px`;
 
+  const rot = (typeof b.rotation === 'number') ? b.rotation : 0;
+  gizmoBox.style.transform = `rotate(${rot}deg)`;
+  gizmoBox.style.transformOrigin = 'center center';
+
   if (gizmoTitle) {
     if (isPhoto) {
       gizmoTitle.textContent = `🖼️ Photo (${b.width}×${b.height}) - Pan: ${state.config.photoPanX || 0}%, ${state.config.photoPanY || 0}%`;
     } else {
-      gizmoTitle.textContent = `${b.name} (${b.width}×${b.height})`;
+      const rotSuffix = rot !== 0 ? ` [${rot}°]` : '';
+      gizmoTitle.textContent = `${b.name} (${b.width}×${b.height})${rotSuffix}`;
     }
   }
 
@@ -5823,6 +6639,8 @@ function updateGizmoBox() {
     gizmoDeleteBtn.style.display = 'inline-flex';
   }
 }
+window.selectWidget = selectWidget;
+window.updateGizmoBox = updateGizmoBox;
 
 function centerWidget(key) {
   const b = renderer.widgetBounds[key];

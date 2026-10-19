@@ -817,6 +817,39 @@ input:checked + .slider:before {
 .handle-sw { bottom: -6px; left: -6px; cursor: nesw-resize; }
 .handle-w  { top: calc(50% - 6px); left: -6px; cursor: ew-resize; }
 
+/* Rotation Handle Stem & Knob */
+.gizmo-rot-stem {
+  position: absolute;
+  top: -24px;
+  left: 50%;
+  width: 1.5px;
+  height: 24px;
+  background: var(--accent-volt, #ccff00);
+  pointer-events: none;
+  transform: translateX(-50%);
+  z-index: 21;
+}
+
+.handle-rot {
+  top: -30px;
+  left: calc(50% - 6px);
+  cursor: grab;
+  border-radius: 50% !important;
+  background: var(--accent-volt, #ccff00) !important;
+  border: 2px solid #000000 !important;
+  box-shadow: 0 0 8px rgba(204, 255, 0, 0.7);
+  width: 12px;
+  height: 12px;
+}
+
+.handle-rot:hover {
+  transform: scale(1.2);
+}
+
+.handle-rot:active {
+  cursor: grabbing;
+}
+
 /* Custom Texts & Stickers */
 .custom-text-item {
   background: rgba(255, 255, 255, 0.04);

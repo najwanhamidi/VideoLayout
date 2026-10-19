@@ -7,10 +7,10 @@
   <meta name="description" content="Generate high-resolution customizable running overlays from FIT, TCX, and GPX files for Instagram Stories, Reels, TikTok, and Strava.">
   <title>RunOverlay - Social Running Overlay Generator</title>
 
-  <!-- Google Fonts: Inter, Bebas Neue, Anton, Rajdhani, JetBrains Mono, Playfair Display, Caveat, Oswald, Montserrat, Barlow Condensed -->
+  <!-- Google Fonts: Inter, Bebas Neue, Anton, Rajdhani, JetBrains Mono, Playfair Display, Caveat, Oswald, Montserrat, Barlow Condensed, Teko, Bungee, Russo One, Outfit, Orbitron, Chakra Petch, Fira Code, Cinzel, Righteous, Syne, Permanent Marker -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow+Condensed:wght@600;700;800&family=Bebas+Neue&family=Caveat:wght@600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&family=Montserrat:wght@600;700;800&family=Oswald:wght@600;700&family=Playfair+Display:ital,wght@0,600;0,700;1,600&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow+Condensed:wght@600;700;800&family=Bebas+Neue&family=Bungee&family=Caveat:wght@600;700&family=Chakra+Petch:wght@600;700&family=Cinzel:wght@700;800&family=Fira+Code:wght@500;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&family=Montserrat:wght@600;700;800&family=Orbitron:wght@600;800;900&family=Oswald:wght@600;700&family=Outfit:wght@600;700;800&family=Permanent+Marker&family=Playfair+Display:ital,wght@0,600;0,700;1,600&family=Rajdhani:wght@600;700&family=Righteous&family=Russo+One&family=Syne:wght@700;800&family=Teko:wght@600;700&display=swap" rel="stylesheet">
 
   <link rel="stylesheet" href="css/styles.css">
 </head>
@@ -86,6 +86,9 @@
               <div class="gizmo-handle handle-s" data-handle="s"></div>
               <div class="gizmo-handle handle-sw" data-handle="sw"></div>
               <div class="gizmo-handle handle-w" data-handle="w"></div>
+              <!-- Rotation Handle stem and knob -->
+              <div class="gizmo-rot-stem"></div>
+              <div class="gizmo-handle handle-rot" data-handle="rot" title="Drag to rotate widget"></div>
             </div>
           </div>
         </div>
@@ -639,6 +642,48 @@
               </label>
             </div>
 
+            <!-- Secondary Metrics Widget Active Items Group -->
+            <div id="metricsItemsConfigGroup" style="margin: -6px 0 12px 32px; padding: 10px; background: rgba(255, 255, 255, 0.03); border-left: 2px solid var(--accent-volt); border-radius: 0 6px 6px 0;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <span style="font-size: 0.72rem; color: var(--text-muted); font-weight: 600;">ACTIVE METRIC ITEMS:</span>
+                <span style="font-size: 0.68rem; color: var(--accent-volt);">Check to show</span>
+              </div>
+              <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;">
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 0.75rem; cursor: pointer;">
+                  <input type="checkbox" id="wToggleMetricTime" checked>
+                  <span>⏱️ Time</span>
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 0.75rem; cursor: pointer;">
+                  <input type="checkbox" id="wToggleMetricPace" checked>
+                  <span>⚡ AVG Pace</span>
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 0.75rem; cursor: pointer;">
+                  <input type="checkbox" id="wToggleMetricHr" checked>
+                  <span>❤️ AVG HR</span>
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 0.75rem; cursor: pointer;">
+                  <input type="checkbox" id="wToggleMetricElevation" checked>
+                  <span>⛰️ Elev Gain</span>
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 0.75rem; cursor: pointer;">
+                  <input type="checkbox" id="wToggleMetricCadence" checked>
+                  <span>👟 Cadence</span>
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 0.75rem; cursor: pointer;">
+                  <input type="checkbox" id="wToggleMetricCalories" checked>
+                  <span>🔥 Calories</span>
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 0.75rem; cursor: pointer;">
+                  <input type="checkbox" id="wToggleMetricDistance">
+                  <span>📍 Distance</span>
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 0.75rem; cursor: pointer;">
+                  <input type="checkbox" id="wToggleMetricBestPace">
+                  <span>🚀 Best Pace</span>
+                </label>
+              </div>
+            </div>
+
             <!-- Splits Widget -->
             <div class="toggle-item">
               <div class="toggle-label-group">
@@ -821,6 +866,8 @@
                 <option value="running-bib-header">Marathon Race Bib Header (Bib Number & Stamped Seal)</option>
                 <option value="broadcast-lowerthird">Esports / TV Broadcast Banner (Lower-Third Live Ribbon)</option>
                 <option value="architect-monolith">Architectural Monolith (Big Calendar Block & Condensed Type)</option>
+                <option value="speed-chaser-bracket">Aerodynamic Speed Bracket (Racing Flags & Split Notch)</option>
+                <option value="editorial-vogue-minimal">Vogue Editorial (High-Fashion Serif & Golden Border Accent)</option>
               </select>
               <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 6px; padding: 5px 10px; background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: 6px;">
                 <span style="font-size: 0.74rem; color: var(--text-normal);">📍 Show Location in Header</span>
@@ -844,6 +891,8 @@
                 <option value="cyber-wireframe">Cyber Grid & Compass HUD (Telemetry Grid & Coordinates)</option>
                 <option value="radar-screen">Tactical Radar Screen (Concentric Radar Rings & Beam)</option>
                 <option value="vintage-topo-map">Topographic Elevation Contours (Organic Terrain Rings)</option>
+                <option value="isometric-shadow-track">Isometric 3D Track (Extruded Ground Shadow & Beacon)</option>
+                <option value="neon-wire-matrix">Neon Wireframe Matrix (Vector Grid & Digital Altitude Crossings)</option>
               </select>
             </div>
 
@@ -870,6 +919,9 @@
                 <option value="precision-hud-gauge">Precision Arc Gauge HUD (Dual Calibrated Dials)</option>
                 <option value="tactical-crosshair">Tactical Crosshair Optic (Reticle & Corner Anchors)</option>
                 <option value="angled-speed-slash">Dynamic Speed Slash (Athletic Slanted Gradient)</option>
+                <option value="kinetic-bold-slash">Kinetic Racing Split (45° High-Contrast Slanted Plate)</option>
+                <option value="neon-pulse-ring">Neon Pulse Halo (Radial Orbit Ring & Center Focal Stat)</option>
+                <option value="magazine-headline">Magazine Headline (Bold cover layout)</option>
               </select>
             </div>
 
@@ -901,7 +953,58 @@
                 <option value="horizontal-chips">Horizontal Stat Chips (Icon + Label + Value inline)</option>
                 <option value="horizontal-slash-minimal">Horizontal Minimalist Slash (Clean Floating)</option>
                 <option value="horizontal-linear-cards">Horizontal Leaderboard Rows (Left/Right)</option>
+                <option value="cyber-hex-matrix">Cyber Hexagon Honeycomb (Chamfered Tech Cells)</option>
+                <option value="minimal-wire-strip">Single-Line Wireframe Strip (Ultra-Thin Hairline Stream)</option>
               </select>
+            </div>
+
+            <!-- Secondary Metrics Custom Visibility Toggles (Enable / Disable any metric) -->
+            <div class="form-group" style="background: rgba(255, 255, 255, 0.03); padding: 12px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.08); margin-top: -6px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 4px;">
+                <label class="form-label" style="margin: 0; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; color: var(--accent-volt);">Visible Metric Items</label>
+                <div style="display: flex; gap: 4px;">
+                  <button type="button" id="metricsSelectAllBtn" class="btn btn-secondary" style="padding: 2px 6px; font-size: 0.68rem;" title="Enable all available metrics">All</button>
+                  <button type="button" id="metricsSelectCoreBtn" class="btn btn-secondary" style="padding: 2px 6px; font-size: 0.68rem;" title="Enable Time, Pace & HR">Core 3</button>
+                  <button type="button" id="metricsSelectTelemetryBtn" class="btn btn-secondary" style="padding: 2px 6px; font-size: 0.68rem;" title="Enable Pace, HR, Cadence, Elevation, Calories">Telemetry</button>
+                </div>
+              </div>
+              <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 8px;">
+                Select which metrics to display across all secondary metric grid designs:
+              </div>
+              <div class="metrics-chip-toggle-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;">
+                <label class="metric-chip-label" style="display: flex; align-items: center; gap: 6px; background: rgba(255, 255, 255, 0.05); padding: 6px 8px; border-radius: 6px; font-size: 0.75rem; cursor: pointer;">
+                  <input type="checkbox" id="metricToggleTime" checked>
+                  <span>⏱️ Time</span>
+                </label>
+                <label class="metric-chip-label" style="display: flex; align-items: center; gap: 6px; background: rgba(255, 255, 255, 0.05); padding: 6px 8px; border-radius: 6px; font-size: 0.75rem; cursor: pointer;">
+                  <input type="checkbox" id="metricTogglePace" checked>
+                  <span>⚡ AVG Pace</span>
+                </label>
+                <label class="metric-chip-label" style="display: flex; align-items: center; gap: 6px; background: rgba(255, 255, 255, 0.05); padding: 6px 8px; border-radius: 6px; font-size: 0.75rem; cursor: pointer;">
+                  <input type="checkbox" id="metricToggleHr" checked>
+                  <span>❤️ AVG HR</span>
+                </label>
+                <label class="metric-chip-label" style="display: flex; align-items: center; gap: 6px; background: rgba(255, 255, 255, 0.05); padding: 6px 8px; border-radius: 6px; font-size: 0.75rem; cursor: pointer;">
+                  <input type="checkbox" id="metricToggleElevation" checked>
+                  <span>⛰️ Elev Gain</span>
+                </label>
+                <label class="metric-chip-label" style="display: flex; align-items: center; gap: 6px; background: rgba(255, 255, 255, 0.05); padding: 6px 8px; border-radius: 6px; font-size: 0.75rem; cursor: pointer;">
+                  <input type="checkbox" id="metricToggleCadence" checked>
+                  <span>👟 Cadence</span>
+                </label>
+                <label class="metric-chip-label" style="display: flex; align-items: center; gap: 6px; background: rgba(255, 255, 255, 0.05); padding: 6px 8px; border-radius: 6px; font-size: 0.75rem; cursor: pointer;">
+                  <input type="checkbox" id="metricToggleCalories" checked>
+                  <span>🔥 Calories</span>
+                </label>
+                <label class="metric-chip-label" style="display: flex; align-items: center; gap: 6px; background: rgba(255, 255, 255, 0.05); padding: 6px 8px; border-radius: 6px; font-size: 0.75rem; cursor: pointer;">
+                  <input type="checkbox" id="metricToggleDistance">
+                  <span>📍 Distance</span>
+                </label>
+                <label class="metric-chip-label" style="display: flex; align-items: center; gap: 6px; background: rgba(255, 255, 255, 0.05); padding: 6px 8px; border-radius: 6px; font-size: 0.75rem; cursor: pointer;">
+                  <input type="checkbox" id="metricToggleBestPace">
+                  <span>🚀 Best Pace</span>
+                </label>
+              </div>
             </div>
 
             <div class="form-group">
@@ -919,6 +1022,8 @@
                 <option value="vertical-split-cards">Vertical Split Cards (Stacked Interval Tiles with Delta)</option>
                 <option value="split-ladder-timeline">Vertical Route Timeline (Mile/KM Route Wire)</option>
                 <option value="compact-dot-matrix">Compact Pace Dot Matrix (Pace Intensity Grid)</option>
+                <option value="neon-speed-wave">Neon Speed Wave (Continuous Area Curve & Split Nodes)</option>
+                <option value="minimal-dot-timeline">Horizontal Pulse Track (Stepped Beads & Fastest Pill)</option>
               </select>
             </div>
 
@@ -932,6 +1037,8 @@
                 <option value="polaroid-clip">Paper Note with Paperclip</option>
                 <option value="trophy-cup">Trophy Podium Banner (Gold Ribbon & Fast Split)</option>
                 <option value="split-terminal">Digital Split Terminal (Monospace Code Prompt)</option>
+                <option value="speed-record-banner">Golden Laurel Record Plaque (Embossed Wreath & Gold Star)</option>
+                <option value="minimal-focus-tag">Minimalist Floating Focus Tag (Ultra-Clean Monogram Badge)</option>
               </select>
             </div>
 
@@ -947,6 +1054,8 @@
                 <option value="mountain-peaks">Mountain Peaks & Summit Flag</option>
                 <option value="stepped-bars">Stepped Altitude Columns (Quantized Terrain Bars)</option>
                 <option value="dual-fill">Dual-Zone Climb & Descent Gradient (Ascent vs Descent)</option>
+                <option value="stepped-elevation-terrace">Stepped Topo Terrace (Stratified Altitude Slabs)</option>
+                <option value="cyber-altitude-grid">Cyber Altitude Grid (Matrix Wireframe & Summit Beacon)</option>
               </select>
             </div>
 
@@ -960,6 +1069,8 @@
                 <option value="line">Crisp High-Precision Line</option>
                 <option value="gradient-zone">Multi-Zone Color Fill</option>
                 <option value="stepped-splits">Stepped Splits with Avg Pace Dash</option>
+                <option value="candlestick-pace-bars">Pace Range Candlesticks (High/Low Interval Candles)</option>
+                <option value="neon-speed-ribbon">Neon Speed Ribbon (Dual-Stroke Glowing Stream)</option>
               </select>
             </div>
 
@@ -973,6 +1084,8 @@
                 <option value="ecg-wave">Colored ECG Wave (Zones)</option>
                 <option value="zone-bars">5-Zone Vertical Frequency Bars</option>
                 <option value="pulse-glow">Glowing Pulse Wave with Alert</option>
+                <option value="ecg-cyber-pulse">ECG Bio-Telemetry Monitor (High-Frequency Pulse Grid)</option>
+                <option value="cardiac-zone-flame">Cardiac Thermal Heatmap (BPM Combustion Gradient)</option>
               </select>
             </div>
 
@@ -988,6 +1101,8 @@
                 <option value="compact-tag">Smartwatch Complication Tag</option>
                 <option value="vertical-hr-thermometer">Vertical Zone Thermometer (5-Zone Meter Column)</option>
                 <option value="tactical-ecg-card">ECG Telemetry Strip (Oscilloscope CRT Strip)</option>
+                <option value="minimal-cardiac-pill">Ultra-Minimal Cardiac Pill (Floating Pulse & BPM)</option>
+                <option value="cyber-hud-cardiac-gauge">Cyber Tactical Ring Gauge (Dual Segmented Arcs & Target Zone)</option>
               </select>
             </div>
           </div>
@@ -1092,6 +1207,30 @@
                 <input type="range" id="widgetHeightSlider" class="form-slider" min="30" max="800" value="120">
               </div>
             </div>
+
+            <!-- Widget Rotation Degree Slider & Input -->
+            <div class="form-group" style="margin-top: 6px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                <label class="form-label" style="margin-bottom: 0;">Rotation Degree (<span id="widgetRotationVal">0°</span>):</label>
+                <div style="display: flex; align-items: center; gap: 4px;">
+                  <input type="number" id="widgetRotationInput" class="form-input" min="-180" max="180" step="1" value="0" style="width: 58px; padding: 2px 4px; font-size: 0.75rem; text-align: right;">
+                  <span style="font-size: 0.72rem; color: var(--text-muted);">°</span>
+                  <button type="button" id="resetWidgetRotationBtn" class="btn btn-secondary" style="padding: 1px 6px; font-size: 0.68rem;" title="Reset rotation to 0°">0°</button>
+                </div>
+              </div>
+              <input type="range" id="widgetRotationSlider" class="form-slider" min="-180" max="180" step="1" value="0">
+              <div style="display: flex; justify-content: space-between; font-size: 0.65rem; color: var(--text-muted); margin-top: 2px;">
+                <span>-180°</span>
+                <div style="display: flex; gap: 4px;">
+                  <button type="button" class="btn btn-secondary widget-rot-preset" data-rot="-45" style="padding: 0 4px; font-size: 0.65rem;">-45°</button>
+                  <button type="button" class="btn btn-secondary widget-rot-preset" data-rot="0" style="padding: 0 4px; font-size: 0.65rem;">0°</button>
+                  <button type="button" class="btn btn-secondary widget-rot-preset" data-rot="45" style="padding: 0 4px; font-size: 0.65rem;">+45°</button>
+                  <button type="button" class="btn btn-secondary widget-rot-preset" data-rot="90" style="padding: 0 4px; font-size: 0.65rem;">+90°</button>
+                </div>
+                <span>+180°</span>
+              </div>
+            </div>
+
             <button id="centerSelectedWidgetBtn" class="btn btn-secondary" style="width: 100%; margin-top: 6px;">
               ↔ Center Widget Horizontally
             </button>
@@ -1170,6 +1309,54 @@
                 <select id="inspectorExtraFieldSelect" class="form-select" style="font-size: 0.8rem;">
                   <!-- Dynamically populated if hero, splitHighlight, etc. -->
                 </select>
+              </div>
+            </div>
+
+            <!-- Secondary Metrics Item Toggles (When Metrics Widget is selected in Inspector) -->
+            <div id="inspectorMetricsItemsContainer" class="form-group" style="display: none; background: rgba(204, 255, 0, 0.04); border: 1px solid rgba(204, 255, 0, 0.25); border-radius: 8px; padding: 10px; margin-bottom: 12px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; flex-wrap: wrap; gap: 4px;">
+                <span style="font-size: 0.75rem; font-weight: 700; color: var(--accent-volt);">📊 Visible Metric Items</span>
+                <div style="display: flex; gap: 4px;">
+                  <button type="button" id="inspectorMetricsSelectAllBtn" class="btn btn-secondary" style="padding: 1px 6px; font-size: 0.68rem;">All</button>
+                  <button type="button" id="inspectorMetricsSelectCoreBtn" class="btn btn-secondary" style="padding: 1px 6px; font-size: 0.68rem;">Core 3</button>
+                </div>
+              </div>
+              <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 8px;">
+                Toggle individual metrics to show in this grid layout:
+              </div>
+              <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;">
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 0.73rem; cursor: pointer;">
+                  <input type="checkbox" id="insToggleMetricTime" checked>
+                  <span>⏱️ Time</span>
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 0.73rem; cursor: pointer;">
+                  <input type="checkbox" id="insToggleMetricPace" checked>
+                  <span>⚡ AVG Pace</span>
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 0.73rem; cursor: pointer;">
+                  <input type="checkbox" id="insToggleMetricHr" checked>
+                  <span>❤️ AVG HR</span>
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 0.73rem; cursor: pointer;">
+                  <input type="checkbox" id="insToggleMetricElevation" checked>
+                  <span>⛰️ Elev Gain</span>
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 0.73rem; cursor: pointer;">
+                  <input type="checkbox" id="insToggleMetricCadence" checked>
+                  <span>👟 Cadence</span>
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 0.73rem; cursor: pointer;">
+                  <input type="checkbox" id="insToggleMetricCalories" checked>
+                  <span>🔥 Calories</span>
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 0.73rem; cursor: pointer;">
+                  <input type="checkbox" id="insToggleMetricDistance">
+                  <span>📍 Distance</span>
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 0.73rem; cursor: pointer;">
+                  <input type="checkbox" id="insToggleMetricBestPace">
+                  <span>🚀 Best Pace</span>
+                </label>
               </div>
             </div>
 
@@ -1339,13 +1526,24 @@
                   <option value="default">Inherit Widget Font</option>
                   <option value="athletic">Athletic Bold (Anton, Impact)</option>
                   <option value="bebas">Bebas Neue (Condensed Athletic)</option>
+                  <option value="teko">Teko (Ultra-Tall Athletic)</option>
+                  <option value="bungee">Bungee (Heavy Urban Block)</option>
+                  <option value="russo">Russo One (Heavyweight Speed)</option>
                   <option value="oswald">Oswald (Punchy Headline)</option>
+                  <option value="modern">Modern Sans (Inter, Clean)</option>
+                  <option value="outfit">Outfit (Sleek Tech Sans)</option>
                   <option value="montserrat">Montserrat (Modern Geometric)</option>
                   <option value="barlow">Barlow Condensed (Technical Clean)</option>
-                  <option value="modern">Modern Sans (Inter, Clean)</option>
                   <option value="tech">Rajdhani Tech (Cyber HUD)</option>
+                  <option value="orbitron">Orbitron (Sci-Fi Cyber)</option>
+                  <option value="chakra">Chakra Petch (Mechanical Esports)</option>
                   <option value="mono">JetBrains Mono (Monospace)</option>
+                  <option value="fira">Fira Code (Code Terminal)</option>
                   <option value="serif">Playfair Display (Editorial Serif)</option>
+                  <option value="cinzel">Cinzel (Imperial Roman Serif)</option>
+                  <option value="righteous">Righteous (80s Retro Arcade)</option>
+                  <option value="syne">Syne (Avant-Garde Luxury)</option>
+                  <option value="marker">Permanent Marker (Street Graffiti)</option>
                   <option value="script">Caveat (Signature Script)</option>
                 </select>
               </div>
@@ -1380,9 +1578,65 @@
               </div>
 
               <!-- Direct Text Edit Input for this sub-element -->
-              <div class="form-group" id="inspectorSubElemTextGroup" style="margin-bottom: 4px;">
+              <div class="form-group" id="inspectorSubElemTextGroup" style="margin-bottom: 6px;">
                 <label class="form-label" style="font-size: 0.72rem;">Edit Text for this Item:</label>
                 <input type="text" id="inspectorSubElemTextInput" class="form-input" placeholder="Custom text override...">
+              </div>
+
+              <!-- Sub-Element Rotation Angle -->
+              <div class="form-group" style="margin-bottom: 6px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                  <label class="form-label" style="margin-bottom: 0; font-size: 0.72rem;">Item Rotation Angle:</label>
+                  <div style="display: flex; align-items: center; gap: 4px;">
+                    <input type="number" id="inspectorSubElemRotationInput" class="form-input" min="-180" max="180" step="1" value="0" style="width: 50px; padding: 1px 4px; font-size: 0.72rem; text-align: right;">
+                    <span style="font-size: 0.7rem; color: var(--text-muted);">°</span>
+                    <button type="button" id="inspectorSubElemResetRotBtn" class="btn btn-secondary" style="padding: 1px 5px; font-size: 0.65rem;" title="Reset rotation">0°</button>
+                  </div>
+                </div>
+                <input type="range" id="inspectorSubElemRotationSlider" class="form-slider" min="-180" max="180" step="1" value="0">
+              </div>
+
+              <!-- Sub-Element Text Shadow & Outline Box -->
+              <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-subtle); border-radius: 6px; padding: 8px; margin-bottom: 6px;">
+                <div style="font-size: 0.72rem; font-weight: 700; color: var(--accent-volt); margin-bottom: 6px; display: flex; justify-content: space-between;">
+                  <span>✨ Item Shadow & Outline</span>
+                </div>
+                <!-- Shadow Toggle -->
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                  <label style="display: flex; align-items: center; gap: 6px; font-size: 0.72rem; cursor: pointer; color: var(--text-normal);">
+                    <input type="checkbox" id="inspectorSubElemShadowToggle">
+                    <span>Enable Shadow</span>
+                  </label>
+                  <input type="color" id="inspectorSubElemShadowColorInput" class="form-color-picker" value="#000000" style="width: 28px; height: 22px; padding: 1px;">
+                </div>
+                <div id="inspectorSubElemShadowDetails" style="display: none; margin-bottom: 6px;">
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+                    <div>
+                      <span style="font-size: 0.65rem; color: var(--text-muted);">Blur (px):</span>
+                      <input type="range" id="inspectorSubElemShadowBlurSlider" class="form-slider" min="0" max="30" step="1" value="8">
+                    </div>
+                    <div>
+                      <span style="font-size: 0.65rem; color: var(--text-muted);">Offset Y:</span>
+                      <input type="range" id="inspectorSubElemShadowOffsetYSlider" class="form-slider" min="-20" max="20" step="1" value="3">
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Outline Toggle -->
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 6px;">
+                  <label style="display: flex; align-items: center; gap: 6px; font-size: 0.72rem; cursor: pointer; color: var(--text-normal);">
+                    <input type="checkbox" id="inspectorSubElemOutlineToggle">
+                    <span>Enable Outline / Stroke</span>
+                  </label>
+                  <input type="color" id="inspectorSubElemOutlineColorInput" class="form-color-picker" value="#000000" style="width: 28px; height: 22px; padding: 1px;">
+                </div>
+                <div id="inspectorSubElemOutlineDetails" style="display: none; margin-top: 4px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 0.65rem; color: var(--text-muted);">Stroke Width:</span>
+                    <span id="inspectorSubElemOutlineWidthVal" style="font-size: 0.68rem; color: var(--accent-volt); font-weight: 600;">2px</span>
+                  </div>
+                  <input type="range" id="inspectorSubElemOutlineWidthSlider" class="form-slider" min="0.5" max="12" step="0.5" value="2">
+                </div>
               </div>
             </div>
 
@@ -1393,13 +1647,24 @@
                 <option value="default">Inherit Global Font</option>
                 <option value="athletic">Athletic Bold (Anton, Impact)</option>
                 <option value="bebas">Bebas Neue (Condensed Athletic)</option>
+                <option value="teko">Teko (Ultra-Tall Athletic)</option>
+                <option value="bungee">Bungee (Heavy Urban Block)</option>
+                <option value="russo">Russo One (Heavyweight Speed)</option>
                 <option value="oswald">Oswald (Punchy Headline)</option>
+                <option value="modern">Modern Sans (Inter, Clean)</option>
+                <option value="outfit">Outfit (Sleek Tech Sans)</option>
                 <option value="montserrat">Montserrat (Modern Geometric)</option>
                 <option value="barlow">Barlow Condensed (Technical Clean)</option>
-                <option value="modern">Modern Sans (Inter, Clean)</option>
                 <option value="tech">Rajdhani Tech (Cyber HUD)</option>
+                <option value="orbitron">Orbitron (Sci-Fi Cyber)</option>
+                <option value="chakra">Chakra Petch (Mechanical Esports)</option>
                 <option value="mono">JetBrains Mono (Monospace)</option>
+                <option value="fira">Fira Code (Code Terminal)</option>
                 <option value="serif">Playfair Display (Editorial Serif)</option>
+                <option value="cinzel">Cinzel (Imperial Roman Serif)</option>
+                <option value="righteous">Righteous (80s Retro Arcade)</option>
+                <option value="syne">Syne (Avant-Garde Luxury)</option>
+                <option value="marker">Permanent Marker (Street Graffiti)</option>
                 <option value="script">Caveat (Signature Script)</option>
               </select>
             </div>
@@ -1487,6 +1752,80 @@
             <div class="form-group">
               <label class="form-label">Element Opacity: <span id="inspectorOpacityVal" style="color:var(--accent-volt); font-weight:700;">100%</span></label>
               <input type="range" id="inspectorOpacitySlider" class="form-slider" min="20" max="100" step="5" value="100">
+            </div>
+
+            <!-- Widget Rotation Degree in Inspector -->
+            <div class="form-group" id="inspectorWidgetRotationGroup">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                <label class="form-label" style="margin-bottom: 0;">Widget Rotation Degree:</label>
+                <div style="display: flex; align-items: center; gap: 4px;">
+                  <input type="number" id="inspectorWidgetRotationInput" class="form-input" min="-180" max="180" step="1" value="0" style="width: 58px; padding: 2px 4px; font-size: 0.75rem; text-align: right;">
+                  <span style="font-size: 0.72rem; color: var(--text-muted);">°</span>
+                  <button type="button" id="inspectorResetWidgetRotationBtn" class="btn btn-secondary" style="padding: 1px 6px; font-size: 0.68rem;" title="Reset rotation to 0°">0°</button>
+                </div>
+              </div>
+              <input type="range" id="inspectorWidgetRotationSlider" class="form-slider" min="-180" max="180" step="1" value="0">
+              <div style="display: flex; justify-content: space-between; font-size: 0.65rem; color: var(--text-muted); margin-top: 2px;">
+                <span>-180°</span>
+                <span id="inspectorWidgetRotationVal" style="color: var(--accent-volt); font-weight: 600;">0°</span>
+                <span>+180°</span>
+              </div>
+            </div>
+
+            <!-- Widget Text Shadow & Outline Controls -->
+            <div class="form-group" style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 10px;">
+              <div style="font-size: 0.75rem; font-weight: 700; color: var(--accent-volt); margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+                <span>✨ Text Shadow & Outline (All Text in Widget)</span>
+              </div>
+
+              <!-- Text Shadow -->
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 0.74rem; cursor: pointer; color: var(--text-normal);">
+                  <input type="checkbox" id="inspectorTextShadowToggle">
+                  <span>Enable Text Shadow</span>
+                </label>
+                <div style="display: flex; gap: 6px; align-items: center;">
+                  <input type="color" id="inspectorTextShadowColorInput" value="#000000" style="width: 32px; height: 24px; padding: 1px; border: none; border-radius: 4px; cursor: pointer;">
+                  <input type="text" id="inspectorTextShadowColorHex" class="form-input" placeholder="#000000" style="width: 70px; padding: 1px 4px; font-size: 0.72rem; font-family: monospace;">
+                </div>
+              </div>
+              <div id="inspectorTextShadowDetails" style="display: none; margin-bottom: 10px; border-left: 2px solid var(--border-subtle); padding-left: 8px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                  <div>
+                    <div style="display: flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-muted);">
+                      <span>Blur:</span>
+                      <span id="inspectorTextShadowBlurVal">8px</span>
+                    </div>
+                    <input type="range" id="inspectorTextShadowBlurSlider" class="form-slider" min="0" max="40" step="1" value="8">
+                  </div>
+                  <div>
+                    <div style="display: flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-muted);">
+                      <span>Offset Y:</span>
+                      <span id="inspectorTextShadowOffsetYVal">3px</span>
+                    </div>
+                    <input type="range" id="inspectorTextShadowOffsetYSlider" class="form-slider" min="-25" max="25" step="1" value="3">
+                  </div>
+                </div>
+              </div>
+
+              <!-- Text Outline / Stroke -->
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 6px;">
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 0.74rem; cursor: pointer; color: var(--text-normal);">
+                  <input type="checkbox" id="inspectorTextOutlineToggle">
+                  <span>Enable Text Outline / Stroke</span>
+                </label>
+                <div style="display: flex; gap: 6px; align-items: center;">
+                  <input type="color" id="inspectorTextOutlineColorInput" value="#000000" style="width: 32px; height: 24px; padding: 1px; border: none; border-radius: 4px; cursor: pointer;">
+                  <input type="text" id="inspectorTextOutlineColorHex" class="form-input" placeholder="#000000" style="width: 70px; padding: 1px 4px; font-size: 0.72rem; font-family: monospace;">
+                </div>
+              </div>
+              <div id="inspectorTextOutlineDetails" style="display: none; margin-top: 6px; border-left: 2px solid var(--border-subtle); padding-left: 8px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.68rem; color: var(--text-muted);">
+                  <span>Outline Width:</span>
+                  <span id="inspectorTextOutlineWidthVal" style="color: var(--accent-volt); font-weight: 600;">2px</span>
+                </div>
+                <input type="range" id="inspectorTextOutlineWidthSlider" class="form-slider" min="0.5" max="16" step="0.5" value="2">
+              </div>
             </div>
 
             <!-- Individual Text & Label Customizer for Current Element -->
@@ -1998,17 +2337,62 @@
               <div class="choice-card active" data-font="athletic">
                 <div class="choice-card-label" style="font-family: 'Anton', sans-serif;">ATHLETIC</div>
               </div>
+              <div class="choice-card" data-font="bebas">
+                <div class="choice-card-label" style="font-family: 'Bebas Neue', sans-serif;">BEBAS</div>
+              </div>
+              <div class="choice-card" data-font="teko">
+                <div class="choice-card-label" style="font-family: 'Teko', sans-serif; font-size: 1.1rem; line-height: 1;">TEKO</div>
+              </div>
+              <div class="choice-card" data-font="bungee">
+                <div class="choice-card-label" style="font-family: 'Bungee', sans-serif; font-size: 0.72rem;">BUNGEE</div>
+              </div>
+              <div class="choice-card" data-font="russo">
+                <div class="choice-card-label" style="font-family: 'Russo One', sans-serif; font-size: 0.75rem;">RUSSO</div>
+              </div>
+              <div class="choice-card" data-font="oswald">
+                <div class="choice-card-label" style="font-family: 'Oswald', sans-serif;">OSWALD</div>
+              </div>
               <div class="choice-card" data-font="modern">
                 <div class="choice-card-label" style="font-family: 'Inter', sans-serif;">MODERN</div>
+              </div>
+              <div class="choice-card" data-font="outfit">
+                <div class="choice-card-label" style="font-family: 'Outfit', sans-serif;">OUTFIT</div>
+              </div>
+              <div class="choice-card" data-font="montserrat">
+                <div class="choice-card-label" style="font-family: 'Montserrat', sans-serif; font-size: 0.72rem;">MONTSERRAT</div>
+              </div>
+              <div class="choice-card" data-font="barlow">
+                <div class="choice-card-label" style="font-family: 'Barlow Condensed', sans-serif;">BARLOW</div>
               </div>
               <div class="choice-card" data-font="cyber">
                 <div class="choice-card-label" style="font-family: 'Rajdhani', sans-serif;">CYBER HUD</div>
               </div>
+              <div class="choice-card" data-font="orbitron">
+                <div class="choice-card-label" style="font-family: 'Orbitron', sans-serif; font-size: 0.72rem;">ORBITRON</div>
+              </div>
+              <div class="choice-card" data-font="chakra">
+                <div class="choice-card-label" style="font-family: 'Chakra Petch', sans-serif; font-size: 0.75rem;">CHAKRA</div>
+              </div>
               <div class="choice-card" data-font="mono">
-                <div class="choice-card-label" style="font-family: 'JetBrains Mono', monospace;">MONO TECH</div>
+                <div class="choice-card-label" style="font-family: 'JetBrains Mono', monospace; font-size: 0.72rem;">MONO TECH</div>
+              </div>
+              <div class="choice-card" data-font="fira">
+                <div class="choice-card-label" style="font-family: 'Fira Code', monospace; font-size: 0.75rem;">FIRA CODE</div>
               </div>
               <div class="choice-card" data-font="serif">
                 <div class="choice-card-label" style="font-family: 'Playfair Display', serif;">EDITORIAL</div>
+              </div>
+              <div class="choice-card" data-font="cinzel">
+                <div class="choice-card-label" style="font-family: 'Cinzel', serif; font-size: 0.78rem;">CINZEL</div>
+              </div>
+              <div class="choice-card" data-font="righteous">
+                <div class="choice-card-label" style="font-family: 'Righteous', sans-serif; font-size: 0.75rem;">RIGHTEOUS</div>
+              </div>
+              <div class="choice-card" data-font="syne">
+                <div class="choice-card-label" style="font-family: 'Syne', sans-serif; font-size: 0.8rem;">SYNE</div>
+              </div>
+              <div class="choice-card" data-font="marker">
+                <div class="choice-card-label" style="font-family: 'Permanent Marker', cursive; font-size: 0.72rem;">MARKER</div>
               </div>
               <div class="choice-card" data-font="script">
                 <div class="choice-card-label" style="font-family: 'Caveat', cursive;">SCRIPT</div>
