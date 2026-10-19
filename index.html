@@ -896,6 +896,58 @@
               </select>
             </div>
 
+            <!-- Animation Runner Marker Controls -->
+            <div class="form-group" style="padding: 10px 12px; background: rgba(255,255,255,0.025); border: 1px solid var(--border-color); border-radius: 8px; margin-bottom: 12px;">
+              <label class="form-label" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <span>🎯 Map Animation Marker</span>
+                <span id="mapMarkerStyleBadge" style="font-size: 0.7rem; color: var(--accent); font-family: monospace; background: rgba(0, 240, 255, 0.08); padding: 1px 6px; border-radius: 4px; border: 1px solid rgba(0, 240, 255, 0.2);">corsair</span>
+              </label>
+              <select id="mapMarkerStyleSelect" class="form-select">
+                <option value="corsair" selected>🎯 Corsair / Tactical Crosshair</option>
+                <option value="dot">🔵 Glowing Pulse Dot</option>
+                <option value="chevron">🧭 Directional Arrow (Heading)</option>
+                <option value="pulse-ring">📡 Sonar / Pulse Ripple Rings</option>
+                <option value="target">🎯 Bullseye Precision Reticle</option>
+                <option value="diamond">💠 Cyber Diamond HUD</option>
+                <option value="pin">📍 Modern GPS Map Pin</option>
+                <option value="minimal-dot">⚫ Crisp Minimal Dot</option>
+              </select>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;">
+                <div>
+                  <div style="display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-muted); margin-bottom: 3px;">
+                    <span>Size</span>
+                    <span id="mapMarkerSizeVal">14px</span>
+                  </div>
+                  <input type="range" id="mapMarkerSizeSlider" min="8" max="32" value="14" step="1" class="form-range">
+                </div>
+                <div>
+                  <div style="font-size: 0.72rem; color: var(--text-muted); margin-bottom: 3px;">Custom Color</div>
+                  <div style="display: flex; gap: 4px; align-items: center;">
+                    <input type="color" id="mapMarkerColorInput" value="#00f0ff" style="width: 34px; height: 26px; border: 1px solid var(--border-color); border-radius: 4px; background: transparent; cursor: pointer; padding: 1px;">
+                    <button type="button" id="mapMarkerColorResetBtn" class="btn btn-secondary" style="padding: 2px 6px; font-size: 0.68rem;" title="Reset to Accent">Auto</button>
+                  </div>
+                </div>
+              </div>
+
+              <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 6px;">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                  <span style="font-size: 0.74rem; color: var(--text-normal);">Pulse Radar Wave</span>
+                  <label class="switch" style="transform: scale(0.8); margin-bottom: 0;">
+                    <input type="checkbox" id="mapMarkerPulseToggle" checked>
+                    <span class="slider"></span>
+                  </label>
+                </div>
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                  <span style="font-size: 0.74rem; color: var(--text-normal);">Show Marker on Static Map</span>
+                  <label class="switch" style="transform: scale(0.8); margin-bottom: 0;">
+                    <input type="checkbox" id="mapMarkerStaticToggle" checked>
+                    <span class="slider"></span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
             <div class="form-group">
               <label class="form-label">Hero Metric Display Style</label>
               <select id="heroDesignSelect" class="form-select">
@@ -2566,6 +2618,20 @@
                 <option value="60">60 FPS (Ultra Smooth)</option>
               </select>
             </div>
+          </div>
+
+          <div style="margin-bottom: 14px;">
+            <label class="form-label">Map Animation Marker</label>
+            <select id="modalMapMarkerStyleSelect" class="form-input">
+              <option value="corsair" selected>🎯 Corsair / Tactical Crosshair</option>
+              <option value="dot">🔵 Glowing Pulse Dot</option>
+              <option value="chevron">🧭 Directional Arrow (Heading)</option>
+              <option value="pulse-ring">📡 Sonar / Pulse Ripple Rings</option>
+              <option value="target">🎯 Bullseye Precision Reticle</option>
+              <option value="diamond">💠 Cyber Diamond HUD</option>
+              <option value="pin">📍 Modern GPS Map Pin</option>
+              <option value="minimal-dot">⚫ Crisp Minimal Dot</option>
+            </select>
           </div>
 
           <div style="margin-bottom: 16px;">

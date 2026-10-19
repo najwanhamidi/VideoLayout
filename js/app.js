@@ -66,6 +66,11 @@ const state = {
     heroMetric: 'distance', // distance, time, pace
     mapColorMode: 'accent', // accent, pace, hr
     mapGlow: true,
+    mapMarkerStyle: 'corsair', // corsair, dot, chevron, pulse-ring, target, diamond, pin, minimal-dot
+    mapMarkerSize: 14, // marker radius size
+    mapMarkerColor: '', // custom color, or empty to inherit accent
+    mapMarkerPulse: true, // radar pulse ripple effect
+    mapShowMarkerInStatic: true, // show marker on static map preview
     splitDataSource: 'km', // km or laps
     splitWidgetMode: 'bars', // bars or highlight
     highlightSplitTarget: 'fastest', // fastest, slowest, last, index-X
@@ -430,6 +435,29 @@ function syncAllControlsWithConfig() {
   };
   setSelectVal('headerDesignSelect', cfg.headerTemplate || cfg.headerDesign);
   setSelectVal('mapDesignSelect', cfg.mapDesign);
+  setSelectVal('mapMarkerStyleSelect', cfg.mapMarkerStyle || 'corsair');
+  setSelectVal('modalMapMarkerStyleSelect', cfg.mapMarkerStyle || 'corsair');
+  const markerBadge = document.getElementById('mapMarkerStyleBadge');
+  if (markerBadge) markerBadge.textContent = cfg.mapMarkerStyle || 'corsair';
+
+  const mSizeSlider = document.getElementById('mapMarkerSizeSlider');
+  const mSizeVal = document.getElementById('mapMarkerSizeVal');
+  if (mSizeSlider) {
+    mSizeSlider.value = cfg.mapMarkerSize || 14;
+    if (mSizeVal) mSizeVal.textContent = `${cfg.mapMarkerSize || 14}px`;
+  }
+
+  const mColorInput = document.getElementById('mapMarkerColorInput');
+  if (mColorInput && cfg.mapMarkerColor) {
+    mColorInput.value = cfg.mapMarkerColor;
+  }
+
+  const mPulseToggle = document.getElementById('mapMarkerPulseToggle');
+  if (mPulseToggle) mPulseToggle.checked = cfg.mapMarkerPulse !== false;
+
+  const mStaticToggle = document.getElementById('mapMarkerStaticToggle');
+  if (mStaticToggle) mStaticToggle.checked = cfg.mapShowMarkerInStatic !== false;
+
   setSelectVal('heroMetricSelect', cfg.heroMetric);
   setSelectVal('heroDesignSelect', cfg.heroDesign);
   setSelectVal('metricsDesignSelect', cfg.metricsDesign);
@@ -923,6 +951,7 @@ function init() {
     updateGizmoBox();
   });
   window.videoAnimator = videoAnimator;
+  window.getProgressiveActivity = getProgressiveActivity;
 
   // 2. Setup Event Listeners
   setupNavigationTabs();
@@ -1109,6 +1138,19 @@ function setupVideoAnimationControls() {
     loopToggle.addEventListener('click', () => {
       videoAnimator.setLoop(!videoAnimator.isLooping);
       loopToggle.classList.toggle('active', videoAnimator.isLooping);
+    });
+  }
+
+  const modalMarkerSelect = document.getElementById('modalMapMarkerStyleSelect');
+  if (modalMarkerSelect) {
+    modalMarkerSelect.addEventListener('change', (e) => {
+      pushUndoSnapshot();
+      state.config.mapMarkerStyle = e.target.value;
+      const wSelect = document.getElementById('mapMarkerStyleSelect');
+      if (wSelect) wSelect.value = e.target.value;
+      const badge = document.getElementById('mapMarkerStyleBadge');
+      if (badge) badge.textContent = e.target.value;
+      triggerRender();
     });
   }
 
@@ -2527,6 +2569,70 @@ function setupWidgetsControls() {
       }
     });
   }
+
+  // Map Animation Marker Controls
+  const markerSelect = document.getElementById('mapMarkerStyleSelect');
+  if (markerSelect) {
+    markerSelect.addEventListener('change', (e) => {
+      pushUndoSnapshot();
+      state.config.mapMarkerStyle = e.target.value;
+      const badge = document.getElementById('mapMarkerStyleBadge');
+      if (badge) badge.textContent = e.target.value;
+      const modalSelect = document.getElementById('modalMapMarkerStyleSelect');
+      if (modalSelect) modalSelect.value = e.target.value;
+      triggerRender();
+      showToast(`Map marker: ${e.target.value}`);
+    });
+  }
+
+  const markerSizeSlider = document.getElementById('mapMarkerSizeSlider');
+  const markerSizeVal = document.getElementById('mapMarkerSizeVal');
+  if (markerSizeSlider) {
+    markerSizeSlider.addEventListener('input', (e) => {
+      const val = Number(e.target.value);
+      state.config.mapMarkerSize = val;
+      if (markerSizeVal) markerSizeVal.textContent = `${val}px`;
+      triggerRender();
+    });
+    markerSizeSlider.addEventListener('change', () => pushUndoSnapshot());
+  }
+
+  const markerPulseToggle = document.getElementById('mapMarkerPulseToggle');
+  if (markerPulseToggle) {
+    markerPulseToggle.addEventListener('change', (e) => {
+      pushUndoSnapshot();
+      state.config.mapMarkerPulse = e.target.checked;
+      triggerRender();
+    });
+  }
+
+  const markerStaticToggle = document.getElementById('mapMarkerStaticToggle');
+  if (markerStaticToggle) {
+    markerStaticToggle.addEventListener('change', (e) => {
+      pushUndoSnapshot();
+      state.config.mapShowMarkerInStatic = e.target.checked;
+      triggerRender();
+    });
+  }
+
+  const markerColorInput = document.getElementById('mapMarkerColorInput');
+  const markerColorResetBtn = document.getElementById('mapMarkerColorResetBtn');
+  if (markerColorInput) {
+    markerColorInput.addEventListener('input', (e) => {
+      state.config.mapMarkerColor = e.target.value;
+      triggerRender();
+    });
+    markerColorInput.addEventListener('change', () => pushUndoSnapshot());
+  }
+  if (markerColorResetBtn) {
+    markerColorResetBtn.addEventListener('click', () => {
+      pushUndoSnapshot();
+      state.config.mapMarkerColor = '';
+      if (markerColorInput) markerColorInput.value = '#00f0ff';
+      triggerRender();
+      showToast('Marker color reset to Accent');
+    });
+  }
 }
 
 // ==========================================
@@ -3563,6 +3669,7 @@ function setupElementInspectorControls() {
       { key: 'title', label: 'Map Location Tag / Title' },
       { key: 'caption', label: 'Polaroid Bottom Caption' },
       { key: 'route', label: 'Route GPS Path' },
+      { key: 'marker', label: 'Animation Runner Marker (Corsair / Dot / Arrow)' },
     ],
   };
 

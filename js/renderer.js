@@ -3102,46 +3102,357 @@ export class OverlayRenderer {
     ctx.fillStyle = '#ffffff';
     ctx.beginPath(); ctx.arc(endPt[0], endPt[1], 3, 0, Math.PI * 2); ctx.fill();
 
-    // Live Runner Beacon (in animated progress mode)
-    if (activity.runnerPoint) {
-      const [rx, ry] = project(activity.runnerPoint.lat, activity.runnerPoint.lon);
-      ctx.save();
+    // Live Runner Beacon / Marker (in animated progress mode or static preview)
+    const shouldDrawMarker = activity.runnerPoint || (config.mapShowMarkerInStatic !== false && pts && pts.length > 0);
+    if (shouldDrawMarker) {
+      const targetPt = activity.runnerPoint || pts[pts.length - 1];
+      const [rx, ry] = project(targetPt.lat, targetPt.lon);
+
+      // Calculate heading angle along route for directional markers
+      let heading = 0;
+      if (pts && pts.length > 1) {
+        const lookback = Math.min(pts.length - 1, 3);
+        const prevPt = pts[pts.length - 1 - lookback];
+        const [px, py] = project(prevPt.lat, prevPt.lon);
+        const dx = rx - px;
+        const dy = ry - py;
+        if (Math.hypot(dx, dy) > 0.2) {
+          heading = Math.atan2(dy, dx);
+        }
+      }
+
       const pRatio = typeof activity.progress === 'number' ? activity.progress : 1;
-      const pulsePhase = (pRatio * 30) % 1;
-      const pulseR = 8 + 10 * pulsePhase;
+      this.drawMapRunnerMarker(ctx, rx, ry, heading, config, accent, pRatio, widgetKey);
+    }
 
-      // Outer radar pulse ring
-      ctx.beginPath();
-      ctx.arc(rx, ry, pulseR, 0, Math.PI * 2);
-      ctx.strokeStyle = accent;
-      ctx.lineWidth = 2 * (1 - pulsePhase);
-      ctx.stroke();
+    ctx.restore();
+  }
 
-      // Glowing solid runner dot
-      ctx.shadowColor = accent;
-      ctx.shadowBlur = 12;
-      ctx.beginPath();
-      ctx.arc(rx, ry, 6, 0, Math.PI * 2);
-      ctx.fillStyle = '#ffffff';
-      ctx.fill();
-      ctx.strokeStyle = accent;
-      ctx.lineWidth = 2.5;
-      ctx.stroke();
+  // =========================================================================
+  // ANIMATION RUNNER MARKER (Corsair, Dot, Chevron, Pulse Ring, Target, Diamond, Pin, Minimal Dot)
+  // =========================================================================
+  drawMapRunnerMarker(ctx, rx, ry, heading, config, accent, pRatio = 1, widgetKey = 'map') {
+    const offMarker = this.getElementOffset(config, widgetKey, 'marker');
+    if (offMarker && offMarker.hidden) return;
 
-      // Tag pill above runner
-      const runnerTag = '▲ RUNNER';
-      ctx.font = 'bold 9px monospace';
-      ctx.textAlign = 'center';
-      const tagW = ctx.measureText(runnerTag).width + 8;
-      this.drawRoundedRect(ctx, rx - tagW / 2, ry - 22, tagW, 14, 4);
-      ctx.fillStyle = '#0a0a12';
-      ctx.fill();
-      ctx.strokeStyle = accent;
-      ctx.lineWidth = 1;
-      ctx.stroke();
-      ctx.fillStyle = accent;
-      ctx.fillText(runnerTag, rx, ry - 12);
-      ctx.restore();
+    rx += (offMarker ? offMarker.x : 0);
+    ry += (offMarker ? offMarker.y : 0);
+
+    const subColor = this.getSubPartColor(config, widgetKey, 'marker', null);
+    const markerColor = subColor || config.mapMarkerColor || accent;
+    const baseR = typeof config.mapMarkerSize === 'number' ? config.mapMarkerSize : 14;
+    const markerStyle = config.mapMarkerStyle || 'corsair';
+    const showPulse = config.mapMarkerPulse !== false;
+    const pulsePhase = (pRatio * 30) % 1;
+
+    ctx.save();
+
+    switch (markerStyle) {
+      case 'corsair':
+      case 'crosshair': {
+        // Tactical HUD Crosshair (Optic reticle)
+        if (showPulse) {
+          const pulseR = baseR + 12 * pulsePhase;
+          ctx.beginPath();
+          ctx.arc(rx, ry, pulseR, 0, Math.PI * 2);
+          ctx.strokeStyle = markerColor;
+          ctx.lineWidth = 1.5 * (1 - pulsePhase);
+          ctx.stroke();
+        }
+
+        ctx.shadowColor = markerColor;
+        ctx.shadowBlur = 8;
+
+        // Circular reticle ring
+        ctx.beginPath();
+        ctx.arc(rx, ry, baseR * 0.7, 0, Math.PI * 2);
+        ctx.strokeStyle = markerColor;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Crosshairs extending across
+        const lineLen = baseR * 1.25;
+        const gap = baseR * 0.35;
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = markerColor;
+        ctx.beginPath();
+        // Top
+        ctx.moveTo(rx, ry - gap);
+        ctx.lineTo(rx, ry - lineLen);
+        // Bottom
+        ctx.moveTo(rx, ry + gap);
+        ctx.lineTo(rx, ry + lineLen);
+        // Left
+        ctx.moveTo(rx - gap, ry);
+        ctx.lineTo(rx - lineLen, ry);
+        // Right
+        ctx.moveTo(rx + gap, ry);
+        ctx.lineTo(rx + lineLen, ry);
+        ctx.stroke();
+
+        // Precision center pip
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(rx, ry, Math.max(2, baseR * 0.2), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = markerColor;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // 4 tactical corner ticks
+        const bDist = baseR * 0.95;
+        const bLen = baseR * 0.3;
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = markerColor;
+        ctx.beginPath();
+        // Top-left
+        ctx.moveTo(rx - bDist, ry - bDist + bLen);
+        ctx.lineTo(rx - bDist, ry - bDist);
+        ctx.lineTo(rx - bDist + bLen, ry - bDist);
+        // Top-right
+        ctx.moveTo(rx + bDist - bLen, ry - bDist);
+        ctx.lineTo(rx + bDist, ry - bDist);
+        ctx.lineTo(rx + bDist, ry - bDist + bLen);
+        // Bottom-left
+        ctx.moveTo(rx - bDist, ry + bDist - bLen);
+        ctx.lineTo(rx - bDist, ry + bDist);
+        ctx.lineTo(rx - bDist + bLen, ry + bDist);
+        // Bottom-right
+        ctx.moveTo(rx + bDist - bLen, ry + bDist);
+        ctx.lineTo(rx + bDist, ry + bDist);
+        ctx.lineTo(rx + bDist, ry + bDist - bLen);
+        ctx.stroke();
+        break;
+      }
+
+      case 'dot': {
+        // Glowing Radar Pulse Dot
+        if (showPulse) {
+          const pulseR = baseR * 0.75 + 14 * pulsePhase;
+          ctx.beginPath();
+          ctx.arc(rx, ry, pulseR, 0, Math.PI * 2);
+          ctx.strokeStyle = markerColor;
+          ctx.lineWidth = 2.5 * (1 - pulsePhase);
+          ctx.stroke();
+        }
+
+        ctx.shadowColor = markerColor;
+        ctx.shadowBlur = 12;
+
+        // Outer beacon circle
+        ctx.beginPath();
+        ctx.arc(rx, ry, baseR * 0.55, 0, Math.PI * 2);
+        ctx.fillStyle = markerColor;
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Luminous white inner center
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(rx, ry, baseR * 0.28, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+
+      case 'pulse-ring':
+      case 'sonar': {
+        // Sonar / Multi-Wave Ripple Rings
+        [0, 0.45].forEach((offset) => {
+          const phase = (pulsePhase + offset) % 1;
+          const r = baseR * 0.45 + baseR * 1.35 * phase;
+          ctx.beginPath();
+          ctx.arc(rx, ry, r, 0, Math.PI * 2);
+          ctx.strokeStyle = markerColor;
+          ctx.lineWidth = 2.2 * (1 - phase);
+          ctx.stroke();
+        });
+
+        ctx.shadowColor = markerColor;
+        ctx.shadowBlur = 10;
+        ctx.beginPath();
+        ctx.arc(rx, ry, baseR * 0.38, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        ctx.strokeStyle = markerColor;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        break;
+      }
+
+      case 'chevron':
+      case 'arrow': {
+        // Directional Navigation Arrow / Chevron (Oriented by heading angle)
+        ctx.translate(rx, ry);
+        ctx.rotate(heading);
+
+        if (showPulse) {
+          ctx.beginPath();
+          ctx.arc(0, 0, baseR * 1.1 + 8 * pulsePhase, 0, Math.PI * 2);
+          ctx.strokeStyle = markerColor;
+          ctx.lineWidth = 1.5 * (1 - pulsePhase);
+          ctx.stroke();
+        }
+
+        ctx.shadowColor = markerColor;
+        ctx.shadowBlur = 10;
+
+        // Aerodynamic stealth chevron pointing towards positive X
+        ctx.beginPath();
+        ctx.moveTo(baseR * 0.95, 0); // Tip
+        ctx.lineTo(-baseR * 0.65, -baseR * 0.65); // Top wing
+        ctx.lineTo(-baseR * 0.3, 0); // Inner notch
+        ctx.lineTo(-baseR * 0.65, baseR * 0.65); // Bottom wing
+        ctx.closePath();
+
+        ctx.fillStyle = markerColor;
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.8;
+        ctx.stroke();
+
+        // Forward core pip
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(baseR * 0.25, 0, baseR * 0.18, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+
+      case 'target':
+      case 'bullseye': {
+        // Bullseye Precision Target Reticle
+        if (showPulse) {
+          ctx.beginPath();
+          ctx.arc(rx, ry, baseR * 1.1 + 10 * pulsePhase, 0, Math.PI * 2);
+          ctx.strokeStyle = markerColor;
+          ctx.lineWidth = 1.5 * (1 - pulsePhase);
+          ctx.stroke();
+        }
+
+        ctx.shadowColor = markerColor;
+        ctx.shadowBlur = 8;
+
+        // Outer ring
+        ctx.beginPath();
+        ctx.arc(rx, ry, baseR * 0.85, 0, Math.PI * 2);
+        ctx.strokeStyle = markerColor;
+        ctx.lineWidth = 1.8;
+        ctx.stroke();
+
+        // Inner ring
+        ctx.beginPath();
+        ctx.arc(rx, ry, baseR * 0.48, 0, Math.PI * 2);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // Center dot
+        ctx.beginPath();
+        ctx.arc(rx, ry, baseR * 0.22, 0, Math.PI * 2);
+        ctx.fillStyle = markerColor;
+        ctx.fill();
+
+        // Cardinal tick marks
+        const tDist = baseR * 0.85;
+        const tLen = baseR * 0.25;
+        ctx.beginPath();
+        [[0, -1], [0, 1], [-1, 0], [1, 0]].forEach(([dx, dy]) => {
+          ctx.moveTo(rx + dx * (tDist - tLen), ry + dy * (tDist - tLen));
+          ctx.lineTo(rx + dx * (tDist + tLen), ry + dy * (tDist + tLen));
+        });
+        ctx.strokeStyle = markerColor;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        break;
+      }
+
+      case 'diamond': {
+        // Cyberpunk Diamond HUD
+        if (showPulse) {
+          const pr = baseR * 0.85 + 12 * pulsePhase;
+          ctx.save();
+          ctx.translate(rx, ry);
+          ctx.rotate(Math.PI / 4);
+          ctx.strokeStyle = markerColor;
+          ctx.lineWidth = 1.5 * (1 - pulsePhase);
+          ctx.strokeRect(-pr, -pr, pr * 2, pr * 2);
+          ctx.restore();
+        }
+
+        ctx.shadowColor = markerColor;
+        ctx.shadowBlur = 10;
+
+        ctx.save();
+        ctx.translate(rx, ry);
+        ctx.rotate(Math.PI / 4);
+        const dSize = baseR * 0.65;
+        ctx.strokeStyle = markerColor;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(-dSize, -dSize, dSize * 2, dSize * 2);
+
+        // Inner solid diamond
+        const innerD = baseR * 0.28;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(-innerD, -innerD, innerD * 2, innerD * 2);
+        ctx.restore();
+        break;
+      }
+
+      case 'pin': {
+        // Modern GPS Location Map Pin
+        if (showPulse) {
+          ctx.beginPath();
+          ctx.ellipse(rx, ry, baseR * 0.65 * (1 + pulsePhase), baseR * 0.28 * (1 + pulsePhase), 0, 0, Math.PI * 2);
+          ctx.strokeStyle = markerColor;
+          ctx.lineWidth = 1.5 * (1 - pulsePhase);
+          ctx.stroke();
+        }
+
+        ctx.shadowColor = markerColor;
+        ctx.shadowBlur = 10;
+
+        const pinH = baseR * 1.8;
+        const bulbR = baseR * 0.65;
+        const bulbCy = ry - pinH + bulbR;
+
+        ctx.beginPath();
+        ctx.arc(rx, bulbCy, bulbR, Math.PI * 0.75, Math.PI * 2.25, false);
+        ctx.lineTo(rx, ry);
+        ctx.closePath();
+
+        ctx.fillStyle = markerColor;
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.6;
+        ctx.stroke();
+
+        ctx.fillStyle = '#0a0a14';
+        ctx.beginPath();
+        ctx.arc(rx, bulbCy, bulbR * 0.42, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+
+      case 'minimal-dot':
+      default: {
+        // Crisp Minimalist Dot (no pulse wave, sharp borders)
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
+        ctx.shadowBlur = 5;
+
+        const dotR = baseR * 0.48;
+        ctx.beginPath();
+        ctx.arc(rx, ry, dotR + 1.8, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(rx, ry, dotR, 0, Math.PI * 2);
+        ctx.fillStyle = markerColor;
+        ctx.fill();
+        break;
+      }
     }
 
     ctx.restore();
